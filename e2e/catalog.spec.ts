@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { presets, getDefinition } from '../src/engine';
 import { STORAGE_KEY, type LabState } from '../src/state';
 import { LIBRARY_KEY } from '../src/library';
+import { allExerciseEntries } from '../src/allExercises';
 
 const field = (page: Page, label: string) => page.getByRole('spinbutton', {name:`${label} value`,exact:true});
 const setupCard = (page: Page, side:'A'|'B') => page.getByRole('article',{name:`Configuration ${side}`,exact:true});
@@ -17,24 +18,25 @@ test.beforeEach(async({page})=>{await page.goto('/');await expect(page.getByRole
 test('catalog aliases and setup filters distinguish modeled exercises from machine illustrations', async({page}) => {
   const catalog = await drawer(page, 'catalog');
   const items = catalog.locator('.catalog-item');
-  await expect(items).toHaveCount(18);
+  await expect(items).toHaveCount(allExerciseEntries.length);
   await catalog.getByLabel('Search exercises').fill('lat prayer');
-  await expect(items).toHaveCount(5);
+  await expect(items.filter({hasText: 'Horizontal torso'}).first()).toBeVisible();
   await catalog.getByRole('button', {name: 'Clear filters'}).click();
   await catalog.getByLabel('Catalog equipment', {exact: true}).selectOption('Dumbbell');
-  await expect(items).toHaveCount(1);
+  await expect(items.filter({hasText: 'Dumbbell lateral raise'}).first()).toBeVisible();
   await catalog.getByLabel('Catalog muscle group').selectOption('Deltoids');
   await catalog.getByLabel('Catalog main joint').selectOption('Shoulder');
   await catalog.getByLabel('Catalog posture').selectOption('Standing');
   await catalog.getByLabel('Catalog sides').selectOption('Unilateral');
-  await expect(items).toHaveCount(1);
+  await expect(items.filter({hasText: 'Dumbbell lateral raise'}).first()).toBeVisible();
   await catalog.getByLabel('Catalog available model').selectOption('Geometry only');
   await expect(items).toHaveCount(0);
   await expect(catalog.getByText('No exercises match these filters.')).toBeVisible();
   await catalog.getByRole('button', {name: 'Clear filters'}).click();
   await catalog.getByLabel('Catalog available model').selectOption('Geometry only');
-  await expect(items).toHaveCount(1);
-  await items.locator('.catalog-pick').click();
+  const unknown = items.filter({hasText: 'Pullover machine · mechanism unknown'});
+  await expect(unknown).toHaveCount(1);
+  await unknown.locator('.catalog-pick').click();
   await expect(setupCard(page, 'A').locator('.status')).toContainText('Resistance not calculated');
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
@@ -60,7 +62,7 @@ test('loads portable example comparisons directly and preserves the prior compar
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('all twelve scenarios use distinct geometry and the unknown machine has no numeric profile',async({page})=>{
+test('reference scenarios use distinct geometry and the unknown machine has no numeric profile',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const cases=['classic','outside','inside','bench','curl-low','curl-bayesian','extension-pushdown','extension-overhead','raise-cable','raise-dumbbell','fly-cable','hip-extension'];
   const geometrySignatures=new Set<string>();
@@ -217,8 +219,8 @@ test('gates incompatible curves and compares only matching complete selected reg
   await expect(page.locator('[data-region-shade=true]')).toHaveCount(1);
   await page.reload();await expect(page.getByLabel('Analysis minimum angle',{exact:true})).toHaveValue('40');
   await expect(page.getByLabel('Comparison notes')).toHaveValue('Geometry is calculated; muscle growth remains untested.');
-  await openDetails(page,'B','Equipment & movement range');await field(page,'B · Minimum elevation').fill('60');
-  await expect(page.getByText('A comparable region needs the same angle interval',{exact:false})).toBeVisible();
+  await openDetails(page,'B','Equipment & movement range');await field(page,'B · Minimum position').fill('60');
+  await expect(page.getByText('A comparable region needs the same coordinate interval',{exact:false})).toBeVisible();
   const analysis=page.getByRole('region',{name:'Comparison analysis',exact:true});
   await expect(analysis.locator('table').first().locator('tbody tr').filter({hasText:'Mean resisting moment'}).locator('td').last()).toHaveText('—');
 });

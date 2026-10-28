@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { bodyCapsules } from './collisions';
 import { evaluate, geometry, getDefinition, type Profile, type Setup, type Vec3 } from './engine';
 
 type SceneProps = {
@@ -22,6 +23,10 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 function extent(setups: [Setup, Setup], profiles: [Profile, Profile]) {
   const points: Vec3[] = [[0, 0, 0], [0, 0, 2.25]];
   setups.forEach((setup, i) => {
+    setup.obstacles?.forEach(obstacle => {
+      if (obstacle.type === 'box') for (let bits = 0; bits < 8; bits++) points.push(obstacle.center.map((value, axis) => value + (bits & (1 << axis) ? 1 : -1) * obstacle.size[axis] / 2) as Vec3);
+      else { points.push(obstacle.a, obstacle.b); for (let axis = 0; axis < 3; axis++) for (const sign of [-1, 1]) { const edge = [...obstacle.a] as Vec3; edge[axis] += sign * obstacle.radius; points.push(edge); } }
+    });
     const definition = getDefinition(setup);
     for (let j = 0; j <= 40; j++) {
       const angle = definition.minAngle + (definition.maxAngle - definition.minAngle) * j / 40;
@@ -60,6 +65,8 @@ export function Scene({ setup, profile, angle, setups, profiles, view, label, an
   const color = label === 'A' ? '#007c78' : '#c96b28';
   const result = evaluate(setup, profile, angle), g = result.geometry;
   const definition = getDefinition(setup);
+  const distanceBounds: [number, number] = setup.exploration ? [-10, 10] : [setup.equipmentLimits?.distanceMin ?? -5, setup.equipmentLimits?.distanceMax ?? 5];
+  const pulleyBounds: [number, number] = setup.exploration ? [.01, 5] : [setup.equipmentLimits?.pulleyMin ?? .01, setup.equipmentLimits?.pulleyMax ?? 5];
   const bounds = useMemo(() => extent(setups, profiles), [setups, profiles]);
   const width = 520, height = view === 'top' ? 270 : 350;
   const hAxis = view === 'front' ? 1 : 0, vAxis = view === 'top' ? 1 : 2;
@@ -86,13 +93,22 @@ export function Scene({ setup, profile, angle, setups, profiles, view, label, an
     if (drag.kind === 'pan') { onPanChange?.([drag.pan[0] + dx, drag.pan[1] + dy]); return; }
     if (drag.kind === 'anchor') {
       const patch: Partial<Setup> = {};
-      if (view !== 'front') patch.hipX = clamp(drag.setup.hipX + dx, -2, 3);
+      if (view !== 'front') patch.hipX = clamp(drag.setup.hipX + dx, ...distanceBounds);
       if (view !== 'top') patch.hipHeight = clamp(drag.setup.hipHeight + dy, .15, 1.8);
+      if (view === 'front' || view === 'top') patch.hipY = clamp((drag.setup.hipY ?? 0) + (view === 'front' ? dx : dy), -3, 3);
       onSetupChange?.(patch); return;
     }
     if (drag.kind === 'outlet') {
       const patch: Partial<Setup> = {};
-      if (view !== 'top') patch.pulleyHeight = clamp(drag.setup.pulleyHeight + dy, .05, 3.5);
+      if (drag.setup.outletPositions) {
+        const positions = g.cables.map((cable, i) => [...(drag.setup.outletPositions?.[i] ?? cable.outlet)] as Vec3);
+        const point = positions[drag.index];
+        if (view !== 'front') point[0] = clamp(point[0] + dx, -10, 10);
+        if (view !== 'top') point[2] = clamp(point[2] + dy, 0, 10);
+        if (view === 'front' || view === 'top') point[1] = clamp(point[1] + (view === 'front' ? dx : dy), -10, 10);
+        onSetupChange?.({ outletPositions: positions }); return;
+      }
+      if (view !== 'top') patch.pulleyHeight = clamp(drag.setup.pulleyHeight + dy, ...pulleyBounds);
       if (view === 'front' || view === 'top') {
         const lateralDelta = view === 'front' ? dx : dy;
         if (setup.cables === 2 || !['pullover', 'machine'].includes(definition.id)) {
@@ -101,7 +117,7 @@ export function Scene({ setup, profile, angle, setups, profiles, view, label, an
         }
       }
       // X is the signed outlet offset; editing it never moves the body or bench.
-      if (view !== 'front') patch.planeOffset = clamp((drag.setup.planeOffset ?? 0) + dx, -2, 3);
+      if (view !== 'front') patch.planeOffset = clamp((drag.setup.planeOffset ?? 0) + dx, -2, 2);
       onSetupChange?.(patch); return;
     }
     const target = worldAt(point);
@@ -133,18 +149,25 @@ export function Scene({ setup, profile, angle, setups, profiles, view, label, an
     const shift = (event.key === 'ArrowUp' || event.key === 'ArrowRight' ? 1 : -1) * delta;
     if (kind === 'anchor') {
       if (vertical && view !== 'top') onSetupChange?.({ hipHeight: clamp(setup.hipHeight + shift, .15, 1.8) });
-      if (!vertical && view !== 'front') onSetupChange?.({ hipX: clamp(setup.hipX + shift, -2, 3) });
+      if (!vertical && view !== 'front') onSetupChange?.({ hipX: clamp(setup.hipX + shift, ...distanceBounds) });
+      if ((!vertical && view === 'front') || (vertical && view === 'top')) onSetupChange?.({ hipY: clamp((setup.hipY ?? 0) + shift, -3, 3) });
     }
     if (kind === 'outlet') {
-      if (vertical && view !== 'top') onSetupChange?.({ pulleyHeight: clamp(setup.pulleyHeight + shift, .05, 3.5) });
+      if (setup.outletPositions) {
+        const positions = g.cables.map((cable, i) => [...(setup.outletPositions?.[i] ?? cable.outlet)] as Vec3);
+        const axis = vertical ? (view === 'top' ? 1 : 2) : (view === 'front' ? 1 : 0);
+        positions[index][axis] = clamp(positions[index][axis] + shift, axis === 2 ? 0 : -10, 10);
+        onSetupChange?.({ outletPositions: positions }); return;
+      }
+      if (vertical && view !== 'top') onSetupChange?.({ pulleyHeight: clamp(setup.pulleyHeight + shift, ...pulleyBounds) });
       else if ((!vertical && view === 'front') || (vertical && view === 'top')) { if (setup.cables === 2 || !['pullover', 'machine'].includes(definition.id)) { const side = Math.sign(g.cables[index]?.outlet[1] ?? 1) || 1; onSetupChange?.({ outletSpacing: clamp(setup.outletSpacing + side * 2 * shift, .05, 3.5) }); } }
-      else if (!vertical) onSetupChange?.({ planeOffset: clamp((setup.planeOffset ?? 0) + shift, -2, 3) });
+      else if (!vertical) onSetupChange?.({ planeOffset: clamp((setup.planeOffset ?? 0) + shift, -2, 2) });
     }
   }}><title>{title} · drag or use arrow keys</title>{circle(at, 14 * fontScale, 'transparent')}{circle(at, 7 * fontScale, 'none', color, 1)}{circle(at, 2.2 * fontScale, color)}</g>;
   const handTrail = useMemo(() => Array.from({ length: 61 }, (_, i) => geometry(setup, profile, definition.minAngle + (definition.maxAngle - definition.minAngle) * i / 60).hand), [setup, profile, definition.minAngle, definition.maxAngle]);
   const limbs = g.limbs ?? [ { from: g.hip, to: g.shoulder, kind: 'body' as const }, ...g.shoulders.flatMap((shoulder, i) => [{ from: shoulder, to: g.elbows[i], kind: 'upperArm' as const }, { from: g.elbows[i], to: g.grips[i], kind: 'forearm' as const }]) ];
   const invalid = result.status === 'contact' || result.status === 'invalid';
-  const title = `${label}: ${view} view. ${setup.name}. ${definition.angleLabel}: ${angle.toFixed(0)} degrees. ${result.status}.`;
+  const title = `${label}: ${view} view. ${setup.name}. ${definition.angleLabel}: ${angle.toFixed(1)} ${definition.angleUnit === 'cm' ? 'centimetres' : 'degrees'}. ${result.status}.`;
   const interactive = !!(onSetupChange || onAngleChange || onPanChange);
   const backPolygon = hull(g.backCorners.map(p));
   const floorY = p([0, 0, 0])[1];
@@ -158,12 +181,21 @@ export function Scene({ setup, profile, angle, setups, profiles, view, label, an
     <rect width={width} height={height} fill="#f3f6f0" onPointerDown={onPanChange ? event => startDrag(event, 'pan') : undefined}/>
     <rect x="12" y="29" width={width - 24} height={height - 69} fill={`url(#${id}-grid)`} onPointerDown={onPanChange ? event => startDrag(event, 'pan') : undefined}/>
     <text x="17" y="19" fill={muted} fontSize={9 * fontScale} fontFamily="inherit" letterSpacing=".7">{view.toUpperCase()} VIEW · {view === 'side' ? 'X–Z' : view === 'front' ? 'Y–Z' : 'X–Y'}</text>
-    <text x={width - 17} y="19" textAnchor="end" fill={ink} fontSize={10 * fontScale} fontFamily="inherit">{Math.round(angle)}°{angle > 180 ? ' · exploratory' : ''}</text>
+    <text x={width - 17} y="19" textAnchor="end" fill={ink} fontSize={10 * fontScale} fontFamily="inherit">{Math.round(angle)}{definition.angleUnit}{setup.exploration ? ' · exploratory' : ''}</text>
     <g clipPath={`url(#${id}-clip)`}>
       {view !== 'top' && <line x1="12" y1={floorY} x2={width - 12} y2={floorY} stroke="#aab9ae" strokeWidth="1.2"/>}
       {g.cables.map((c, i) => <g key={`rail-${i}`}>{view === 'top' ? line([c.outlet[0], bounds.min[1], 0], [c.outlet[0], bounds.max[1], 0], '#a8b8af', 1, { strokeDasharray: '4 5' }) : <>{line([c.outlet[0], c.outlet[1], 0], [c.outlet[0], c.outlet[1], Math.max(c.outlet[2] + .13, 2.3)], '#a5b6a8', 3)}{line([c.outlet[0] - .04, c.outlet[1], 0], [c.outlet[0] - .04, c.outlet[1], Math.max(c.outlet[2] + .13, 2.3)], '#d3ddd3', 1)}</>}</g>)}
       {definition.id === 'machine' && <g>{line(add(g.shoulder, [-.1, 0, 0]), g.elbow, '#899a90', 5)}{circle(add(g.shoulder, [-.1, 0, 0]), 6, '#d2ddd3', '#81988c', 1.5)}{circle(g.elbow, 6, '#c3cdbf', '#81988c', 1)}<text x="18" y={height - 60} fill={muted} fontSize={9 * fontScale}>Mechanism illustrative · resistance unknown</text></g>}
-      {setup.kind === 'bench' && <g><polygon points={backPolygon.map(point => point.join(',')).join(' ')} fill="#d2ddd3" stroke="#82988b" strokeWidth="1.5" strokeLinejoin="round"/>{line(add(g.hip, [-.09, 0, -.075]), add(g.hip, [.40 * setup.facing, 0, -.075]), '#91a497', 7)}{line(add(g.hip, [.15 * setup.facing, 0, -.09]), [g.hip[0] + .15 * setup.facing, 0, .035], '#9aac9f', 4)}{line([g.hip[0] - .2, 0, .035], [g.hip[0] + .5, 0, .035], '#9aac9f', 4)}</g>}
+      {setup.kind === 'bench' && <g><polygon points={backPolygon.map(point => point.join(',')).join(' ')} fill="#d2ddd3" stroke="#82988b" strokeWidth="1.5" strokeLinejoin="round"/>{line(add(g.hip, [-.09, 0, -.075]), add(g.hip, [.40 * setup.facing, 0, -.075]), '#91a497', 7)}{line(add(g.hip, [.15 * setup.facing, 0, -.09]), [g.hip[0] + .15 * setup.facing, g.hip[1], .035], '#9aac9f', 4)}{line([g.hip[0] - .2, g.hip[1], .035], [g.hip[0] + .5, g.hip[1], .035], '#9aac9f', 4)}</g>}
+      {setup.obstacles?.map(obstacle => {
+        const center = obstacle.type === 'box' ? obstacle.center : mul(add(obstacle.a, obstacle.b), .5);
+        const corners = obstacle.type === 'box' ? Array.from({length: 8}, (_, bits) => obstacle.center.map((value, axis) => value + (bits & (1 << axis) ? 1 : -1) * obstacle.size[axis] / 2) as Vec3) : [];
+        return <g key={obstacle.id} data-obstacle={obstacle.id}><title>{obstacle.name || 'Represented obstacle'}</title>
+          {obstacle.type === 'box' ? <polygon points={hull(corners.map(p)).map(point => point.join(',')).join(' ')} fill="#bda982" fillOpacity=".22" stroke="#9c8359" strokeWidth="1.4"/> : line(obstacle.a, obstacle.b, '#9c8359', Math.max(1, obstacle.radius * 2 * chartScale), {opacity: .35})}
+          {annotations && <text x={p(center)[0]} y={p(center)[1] - 7} textAnchor="middle" fill="#806942" fontSize={9 * fontScale}>{obstacle.name || 'Obstacle'}</text>}
+        </g>;
+      })}
+      {setup.bodyCollision && <g opacity=".16">{bodyCapsules(g, setup).map(capsule => <g key={capsule.id}>{line(capsule.a, capsule.b, '#b48b57', Math.max(1, 2 * capsule.radius * chartScale))}{circle(capsule.a, capsule.radius * chartScale, '#b48b57')}{circle(capsule.b, capsule.radius * chartScale, '#b48b57')}</g>)}</g>}
       {definition.id === 'raise' && setup.tilt !== 0 && <g>{line(g.grips[0], [g.grips[0][0], g.grips[0][1], 0], '#9aac9f', 4)}{annotations && <text x={clamp(p(g.grips[0])[0] - 10, 85 * fontScale, width - 18)} y={clamp(p(g.grips[0])[1] - 12, 44, height - 49)} textAnchor="end" fill={muted} fontSize={8 * fontScale}>Support assumed</text>}</g>}
       <path d={path(handTrail)} stroke={color} strokeWidth="1.1" strokeDasharray="3 5" fill="none" opacity=".28"/>
       <g opacity={invalid ? .4 : 1}>

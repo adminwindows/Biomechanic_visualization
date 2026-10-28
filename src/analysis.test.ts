@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BAR_RADIUS, RAD, defaultProfile, presets, type Setup } from './engine';
+import { BAR_RADIUS, RAD, defaultProfile, geometry, presets, type Setup } from './engine';
 import { createInitialState } from './state';
 import { canCompareRegions, comparisonDifferences, comparisonReport, parameterSweep, regionSummary, scanEvents, summarizeSamples, type AnalysisSample } from './analysis';
 
@@ -89,6 +89,22 @@ describe('controlled comparisons and portable interpretation', () => {
     const a = regionSummary(classic, defaultProfile, [140, 180]);
     expect(canCompareRegions(classic, { ...classic, model: 'curl' }, [a, a])).toBe(false);
   });
+  it('sweeps actual explicit outlet heights instead of an unused nominal height', () => {
+    const setup: Setup = { ...classic, pulleyHeight: 3, outletPositions: [[0, 0, 2.25]] };
+    const original = structuredClone(setup);
+    const sweep = parameterSweep(setup, defaultProfile, [140, 180], 'pulleyHeight', [-.02, 0, .02]);
+    expect(sweep.map(point => Number(point.value.toFixed(2)))).toEqual([2.23, 2.25, 2.27]);
+    expect(sweep[1].summary.mean).toBeCloseTo(regionSummary(setup, defaultProfile, [140, 180]).mean!, 10);
+    expect(sweep[0].summary.mean).not.toBe(sweep[2].summary.mean);
+    expect(sweep[2].summary.mean).toBeCloseTo(regionSummary({ ...setup, outletPositions: [[0, 0, 2.27]] }, defaultProfile, [140, 180]).mean!, 10);
+    expect(setup).toEqual(original);
+    // Translating a pair must preserve its height difference and reject a
+    // candidate if either actual outlet would leave the coordinate domain.
+    const pair: Setup = { ...setup, cables: 2, outletPositions: [[0, -.5, .01], [0, .5, 9.99]] };
+    expect(parameterSweep(pair, defaultProfile, [140, 180], 'pulleyHeight', [-.02, 0, .02]).map(point => point.offset)).toEqual([0]);
+    expect(parameterSweep(classic, defaultProfile, [140, 180], 'pulleyHeight', [10])).toEqual([]);
+    expect(parameterSweep(classic, defaultProfile, [140, 180], 'hipX', [20])).toEqual([]);
+  });
   it('records force convention, multiple changed variables and body provenance', () => {
     const state = createInitialState();
     const differences = comparisonDifferences(state);
@@ -105,6 +121,31 @@ describe('controlled comparisons and portable interpretation', () => {
     expect(report).toContain('External-load work in reference action');
     expect(report).toContain('not estimates of muscle tension');
   });
+  it('shows the geometry and validity settings that explain a controlled comparison', () => {
+    const state = createInitialState();
+    state.setups[1] = structuredClone(state.setups[0]);
+    Object.assign(state.setups[1], {
+      forearmRotation: 45, bodyCollision: true, bodyRadius: .08,
+      collisionAttachmentClearance: .12, exploration: true, loadMode: 'mass', forceKnown: false,
+      equipmentLimits: { pulleyMin: .2, pulleyMax: 2.4, distanceMin: -1, distanceMax: 2 },
+      obstacles: [
+        { id: 'seat', name: 'Seat cushion', type: 'box', center: [1, 0, .4], size: [.4, .5, .12], allowBodyContact: true },
+        { id: 'rail', name: 'Frame upright', type: 'capsule', a: [0, -.5, 0], b: [0, -.5, 2], radius: .03, allowBodyContact: false },
+      ],
+    });
+    const rows = comparisonDifferences(state);
+    for (const label of ['Forearm orientation', 'Represented body contact checks enabled', 'Represented body capsule radius', 'Attachment contact allowance', 'Explore outside apparatus adjustment limits', 'Cable load entry convention', 'Cable force declared known', 'Represented seat and frame obstacles', 'Apparatus adjustment limits']) {
+      expect(rows.find(row => row.label === label)?.different, label).toBe(true);
+    }
+    const obstacles = rows.find(row => row.label === 'Represented seat and frame obstacles')!;
+    expect(obstacles.a).toBe('None represented');
+    expect(obstacles.b).toContain('Seat cushion: box; center XYZ (100, 0, 40) cm; size XYZ (40, 50, 12) cm; intended body support allowed');
+    expect(obstacles.b).toContain('Frame upright: capsule; endpoint A XYZ (0, -50, 0) cm; endpoint B XYZ (0, -50, 200) cm; radius 3 cm; intended body support not allowed');
+    expect(obstacles.b).not.toContain('[object Object]');
+    expect(rows.find(row => row.label === 'Apparatus adjustment limits')!.b).toBe('Outlet height 20 cm – 240 cm; pelvis X -100 cm – 200 cm');
+    state.setups[0].obstacles = structuredClone(state.setups[1].obstacles);
+    expect(comparisonDifferences(state).find(row => row.label === 'Represented seat and frame obstacles')?.different).toBe(false);
+  });
 });
 
 
@@ -118,4 +159,32 @@ it('does not report complete region metrics across a contact interval narrower t
   expect(summary.externalWork).toBeNull();
   expect(summary.samples.some(point=>point.status==='contact')).toBe(true);
   expect(scanEvents(setup,defaultProfile).firstContact).not.toBeNull();
+});
+
+
+it('integrates translational force over centimetres converted to metres, not radians', () => {
+  const summary = summarizeSamples([sample(0, 100), sample(5, 100)], [0, 5], [0, 5], .01);
+  expect(summary.mean).toBeCloseTo(100);
+  expect(summary.externalWork).toBeCloseTo(-5);
+  expect(summary.cableWork).toBeCloseTo(-5);
+  expect(() => summarizeSamples([sample(0, 100), sample(5, 100)], [0, 5], [0, 5], 0)).toThrow('positive');
+});
+
+it('uses the shrug force coordinate to calculate work from the engine definition', () => {
+  const setup: Setup = { ...classic, model: 'shrug', resistance: 'dumbbell', loadMass: 10, loadedSides: 'bilateral', tilt: 0, facing: 1, hipHeight: .9, range: [0, 12] };
+  const summary = regionSummary(setup, defaultProfile, setup.range);
+  expect(summary.complete).toBe(true);
+  expect(summary.mean).toBeCloseTo(196.2, 8);
+  expect(summary.externalWork).toBeCloseTo(-196.2 * .12, 8);
+});
+
+
+it('does not bridge a narrow cable-travel violation between regular translation samples', () => {
+  const setup: Setup = { ...classic, model: 'shrug', resistance: 'cable', loadedSides: 'unilateral', cables: 1, tilt: 0, facing: 1, hipHeight: .9, range: [6, 6.3], cableTravelMin: .0001 };
+  const target = geometry(setup, defaultProfile, 6.137).cables[0].attachment;
+  setup.outletPositions = [[...target]];
+  const summary = regionSummary(setup, defaultProfile, setup.range);
+  expect(summary.complete).toBe(false);
+  expect(summary.mean).toBeNull();
+  expect(summary.samples.some(point => point.angle > 6.127 && point.angle < 6.147 && point.moment === null)).toBe(true);
 });

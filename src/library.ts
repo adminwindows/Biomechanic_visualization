@@ -51,7 +51,7 @@ export function validateLibrary(input: unknown): Library {
     const snapshot = object(row.state, 'Saved comparison snapshot');
     const state = validateState(snapshot);
     const source = snapshot.modelVersion !== MODEL_VERSION ? snapshot.modelVersion : row.sourceModelVersion;
-    if (source !== undefined && source !== 'pullover-1') throw new Error('A comparison has an unsupported source model version.');
+    if (source !== undefined && source !== 'pullover-1' && source !== 'biomechanics-2') throw new Error('A comparison has an unsupported source model version.');
     return { ...base(row), state, favorite: row.favorite, ...(source ? { sourceModelVersion: source as string } : {}) };
   });
   const bodies = items(raw.bodies, 'Body profiles').map(item => {

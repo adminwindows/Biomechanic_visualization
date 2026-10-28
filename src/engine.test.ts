@@ -438,8 +438,8 @@ describe("pullover pose and generalized contribution", () => {
       for (const angle of [75, 130, 180, 195]) {
         const setup = { ...preset, elbow: 23 };
         const current = geometry(setup, defaultProfile, angle);
-        const before = geometry(setup, defaultProfile, angle - epsilon / RAD);
-        const after = geometry(setup, defaultProfile, angle + epsilon / RAD);
+        const before = geometry(setup, defaultProfile, angle - epsilon / (getDefinition(setup).coordinateScale??RAD));
+        const after = geometry(setup, defaultProfile, angle + epsilon / (getDefinition(setup).coordinateScale??RAD));
         const generalized = current.cables.reduce(
           (sum, cable) => sum + dot(cable.force!, cable.derivative ?? current.handDerivative),
           0,
@@ -485,7 +485,7 @@ describe("pullover pose and generalized contribution", () => {
   });
 
   it("preserves rigid arm segments and grip closure under all presets", () => {
-    for (const preset of presets)
+    for (const preset of presets.filter(p=>!['wrist-flexion','wrist-extension','forearm-rotation'].includes(p.model??'')))
       for (const q of [0, 130, 180, 200]) {
         const g = geometry({ ...preset, elbow: 30 }, defaultProfile, q);
         for (let side = 0; side < 2; side++) {
@@ -816,5 +816,73 @@ describe('explicit leg gravity and equipment constraints', () => {
     }
     const fly=presets.find(item=>item.preset==='fly-cable')!;
     expect(evaluate({...fly,cables:1},defaultProfile,30).status).toBe('invalid');
+  });
+});
+
+describe('expanded selectable isolated catalog',()=>{
+  it.each(presets.filter(p=>p.model!=='machine').map(p=>[p.preset,p] as const))('has a valid computable representative pose for %s',(_id,setup)=>{
+    const q=(setup.range[0]+setup.range[1])/2;
+    const result=evaluate(setup,defaultProfile,q);
+    expect(result.moment,`${setup.name}: ${result.status} ${result.validityReason??''}`).not.toBeNull();
+    expect(Number.isFinite(result.moment)).toBe(true);
+  });
+});
+
+describe('expanded physical conventions and represented apparatus',()=>{
+  const find=(id:string)=>presets.find(p=>p.preset===id)!;
+  it('counts a shared bar mass once and two dumbbells separately',()=>{
+    const bar=find('shrug-barbell');
+    expect(evaluate(bar,defaultProfile,4).moment).toBeCloseTo(30*9.81,9);
+    expect(evaluate({...bar,freeWeightKind:'dumbbell'},defaultProfile,4).moment).toBeCloseTo(60*9.81,9);
+    expect(evaluate({...find('pullover-barbell'),loadMass:20},defaultProfile,120).moment).toBeCloseTo(evaluate({...find('pullover-barbell'),loadMass:10,freeWeightKind:'dumbbell'},defaultProfile,120).moment!,9);
+  });
+  it('changes the actual fly trajectory when choosing low-to-high or high-to-low planes',()=>{
+    const low=geometry(find('fly-low-high'),defaultProfile,70),high=geometry(find('fly-high-low'),defaultProfile,70);
+    expect(low.hand[2]).toBeGreaterThan(low.shoulder[2]);
+    expect(high.hand[2]).toBeLessThan(high.shoulder[2]);
+    expect(compatible(find('fly-low-high'),find('fly-high-low'))).toBe(false);
+  });
+  it('preserves arm lengths and orthogonal equipment axes in rolled poses',()=>{
+    for(const id of ['raise-side-lying','curl-dumbbell','fly-dumbbell-flat']) {
+      const setup:Setup={...find(id),posture:'side-lying',kind:'bench',hipHeight:.8,bodyRoll:-70};
+      const g=geometry(setup,defaultProfile,45);
+      for(let side=0;side<2;side++) {
+        expect(length(sub(g.elbows[side],g.shoulders[side]))).toBeCloseTo(defaultProfile.upperArm,10);
+        expect(length(sub(g.grips[side],g.elbows[side]))).toBeCloseTo(defaultProfile.forearm+defaultProfile.hand,10);
+      }
+      for(const axis of g.backrestAxes!)expect(length(axis)).toBeCloseTo(1,10);
+      expect(dot(g.backrestAxes![0],g.backrestAxes![2])).toBeCloseTo(0,10);
+    }
+  });
+  it('moves the actual leg in supported hip extension and side-lying abduction',()=>{
+    for(const id of ['hip-extension','hip-abduction']) {
+      const setup:Setup={...find(id),posture:id==='hip-extension'?'supine':'side-lying',kind:'bench',hipHeight:.9,bodyRoll:-90,tilt:0,resistance:'dumbbell',loadMass:2};
+      const g=geometry(setup,defaultProfile,30),next=geometry(setup,defaultProfile,31);
+      expect(g.limbs?.filter(l=>l.kind==='thigh')).toHaveLength(2);
+      expect(g.limbs?.filter(l=>l.kind==='shank')).toHaveLength(2);
+      expect(length(sub(next.hand,g.hand))).toBeGreaterThan(.01);
+      expect(length(sub(g.elbow,g.jointOrigin!))).toBeCloseTo(defaultProfile.thigh!,10);
+      expect(length(sub(g.hand,g.elbow))).toBeCloseTo(defaultProfile.shank!,10);
+    }
+  });
+  it('keeps asymmetric outlets fixed when shifting the body laterally',()=>{
+    const setup:Setup={...classic,cables:2,outletPositions:[[0,-.3,2.1],[.2,.7,1.9]]};
+    const a=geometry(setup,defaultProfile,140),b=geometry({...setup,hipY:.4},defaultProfile,140);
+    expect(b.cables.map(c=>c.outlet)).toEqual(a.cables.map(c=>c.outlet));
+    closeVector(sub(b.cables[0].attachment,a.cables[0].attachment),[0,.4,0]);
+  });
+  it('enforces declared apparatus limits unless exploration is explicitly enabled',()=>{
+    const setup:Setup={...classic,equipmentLimits:{pulleyMin:.1,pulleyMax:1,distanceMin:-1,distanceMax:2}};
+    expect(evaluate(setup,defaultProfile,150).validityReason).toContain('apparatus adjustment limits');
+    expect(evaluate({...setup,exploration:true},defaultProfile,150).moment).not.toBeNull();
+  });
+  it('invalidates direct mechanics on a represented frame contact',()=>{
+    const q=150,g=geometry(classic,defaultProfile,q),cable=g.cables[0];
+    const center=scale(add(cable.attachment,cable.outlet),.5);
+    const setup:Setup={...classic,obstacles:[{id:'frame',name:'Measured frame rail',type:'box',center,size:[.08,.08,.08]}]};
+    const result=evaluate(setup,defaultProfile,q);
+    expect(result.status).toBe('contact');expect(result.moment).toBeNull();
+    expect(result.contactKind).toBe('cable–obstacle');expect(result.validityReason).toContain('Measured frame rail');
+    expect(result.contact).not.toBeNull();
   });
 });

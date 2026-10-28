@@ -1,96 +1,70 @@
 # Exercise Biomechanics Lab
 
-**[Open the app — no installation or local build required](https://exercise-biomechanics-lab-charles.charlestahan93.chatgpt.site)**
+**[Open the app](https://exercise-biomechanics-lab-charles.charlestahan93.chatgpt.site)** — no local installation or build required.
 
-An interactive workspace for understanding how exercise setup changes external resistance. Compare body proportions, posture, equipment, force and movement ranges, then record what the comparison establishes. The [original project handoff](EXERCISE_BIOMECHANICS_HANDOFF.md) is preserved unchanged.
+An interactive workspace for asking what changes when you move an outlet, alter a body dimension, choose another movement path or supply a measured resistance curve. Compare the resulting mechanics, check whether the conclusion survives plausible measurement error, and keep the evidence with the configuration. The [original handoff](EXERCISE_BIOMECHANICS_HANDOFF.md) is preserved unchanged.
 
-## Try it
+## Choose a workspace
 
-1. Open **Exercise catalog** and load a low-cable curl into A. The model rotates about the elbow; a lateral raise uses a different shoulder coordinate and front view, while hip extension loads the ankle.
-2. Copy A into B and change only B's pulley height. Use the body, equipment and actual-force locks to define what stays constant. A differences table makes the changed variables visible.
-3. Compare cable and dumbbell lateral raises at the same force per attachment. Select a movement region to compare the minimum, maximum and mean external contribution, and mechanical work over that interval.
-4. Drag a pulley, pelvis or active grip/ankle. Numeric fields and keyboard controls provide alternatives. Zoom and pan remain shared between A and B.
-5. Save named comparisons and body/equipment profiles. Export a comparison, the entire library, or a readable comparison report. Paste an exercise list or CSV to find supported movements and resolve ambiguous names.
+The shared catalog searches exercises, aliases and equipment across the application and opens the relevant workspace. Muscle tags help navigation; they do not measure recruitment.
 
-For a faster start, open **Example comparisons** and load one of the three prepared studies directly. Undo returns to your previous comparison; each example is also available as portable JSON.
+| Workspace | What you can compare | Meaning of the result |
+|---|---|---|
+| **Joint & exercise comparison** | Pullovers, curls, triceps extensions, raises, flyes/reverse flyes, isolated hip/knee/wrist movements, forearm rotation and shrugs | External contribution about the declared coordinate: rotational N·m or translational N |
+| **Compound movements** | Coupled pullovers, pulls, rows, presses, bodyweight movements, hinges, squats/lunges, calves and trunk movements | External contribution along a prescribed path, in J per unit progress; selected arm-axis moments where their assumptions permit |
+| **Machines & measured profiles** | Plate-loaded levers, cable/belt transmissions, supplied cam arms, four-bar linkages and measured/supplied curves | Machine-input moment or measured force, with explicit coordinate, domain, provenance and uncertainty |
+| **Find a setup & research** | Height–distance placement maps, constrained search, measurement sensitivity, prescribed-speed power and an evidence notebook | Several mechanical trade-offs under stated constraints, linked to reproducible comparisons |
 
-On first production load, wait for **Offline ready** before disconnecting. Installation depends on your browser: use the install action when offered, or the Android browser's install/add-to-home-screen menu. An update waits for the explicit **Save & update** action. See [offline behavior and verification](docs/OFFLINE.md).
+[COVERAGE.md](docs/COVERAGE.md) maps every family in handoff §9.3 to its workspace and model. An exercise name does not establish that all its joint moments or a particular commercial mechanism are known. Each workspace states which quantities it can calculate.
 
-## Exercise models
+## A useful first comparison
 
-| Family          | Included scenarios                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pullover        | Conventional single cable including horizontal/kneeling; facing away outside; inside the outlet plane; bench-supported from flat to upright |
-| Elbow flexion   | Low-cable curl; upper arm behind torso / Bayesian curl                                                                                      |
-| Elbow extension | Pushdown; overhead extension with adjustable upper-arm posture and facing direction                                                         |
-| Lateral raise   | Unilateral cable with fore–aft outlet placement; dumbbell with gravity and body inclination                                                 |
-| Shoulder fly    | Two independent cable handles in the transverse plane                                                                                       |
-| Hip movement    | Cable hip extension with an ankle attachment                                                                                                |
+1. Open **Example comparisons** and load a prepared study, or choose an exercise for A from the catalog. Enter your body dimensions if available; the starting proportions are editable examples.
+2. Copy A into B. Enable **Same body** and **Same force per attachment**, then leave **Same equipment** off when equipment is the variable you want to change. Move only B's pulley height and inspect the differences table.
+3. Choose a criterion and movement region. Check resistance sign, contact/travel limits and unavailable portions before comparing means or work. Equal progress is a timing convention; it does not mean equal joint angles.
+4. Open **Find a setup & research** to map several placements. The search holds the original body, load convention, actual force and movement range fixed. Inspect the trade-off candidates and the sampled measurement envelope, then load one against the original baseline.
+5. Save a research note with the question, finding, limitations, next measurement and any relevant citations. Choose its source workspace explicitly: joint, compound or machine. The note retains that comparison and can restore it later. A model calculation, personal observation, study result and hypothesis remain separate categories.
 
-There are 18 educational presets spanning the 12 specified scenarios, including extra pullover examples and a clearly non-quantitative unknown-machine illustration. Presets use appropriate kinematics, axes and force application points; the catalog does not relabel one drawing as different exercises.
+The [comparison guide](docs/COMPARISON_GUIDE.md) and [portable examples](public/examples/README.md) give reproducible starting questions. [COVERAGE.md](docs/COVERAGE.md#worked-workflows) adds compound, machine-data and uncertainty workflows.
 
-## What is implemented
+## Keep and restore your work
 
-- Side, front and top SVG projections of a shared 3D engine; articulated body/support geometry, force arrows, draggable points and shared framing.
-- Equal-angle, equal-progress and independent positions; animation speed/reduced-motion controls; copy/swap and undo/redo. Incompatible joint coordinates show separate curves and no numerical ranking.
-- Explore mode retains the chosen range; **Usable range according to the model** constrains movement to a selected clear interval without replacing the original range. Shared movement respects both panels. Unknown mechanisms and slack cable routes remain unavailable for this clearance constraint.
-- Actual cable force, selected mass with an explicit transmission factor, dumbbell weight, distinct unknown/slack/zero-force states, and optional explicitly supplied arm or leg segment masses.
-- Cable and gravity contributions separately and combined; signed moments, selected-region summaries, external work, separate contact/reversal events, settings differences, parameter sweeps and sensitivity checks.
-- A symmetric rigid-bar grip solver preserving upper-arm/forearm/hand lengths and the fixed elbow bend. Incompatible grip/bar/support constraints are reported, without stretching body segments or moving equipment.
-- Spatial backrest–cable and backrest–bar contacts. Analytic event candidates prevent narrow represented contacts and tangencies from falling between regular curve samples.
-- Height plus refined arm, torso, shoulder, pelvis, thigh, lower-leg, foot and head/neck dimensions; landmark diagram, example/estimated/measured provenance and locks. Explicit regeneration preserves measurements and locked fields.
-- Named comparison, body and equipment/setup libraries; favorites, validated portable JSON, readable reports, and backups before legacy-model or unreadable saved data is replaced.
-- Searchable exercise aliases and filters for navigation muscle tags, equipment, joint, posture, unilateral/bilateral setup, and available model. Three ready-to-load comparisons provide reproducible starting questions.
-- Exercise-name/CSV matching that retains ambiguous and unsupported names and the user's explicit resolutions.
-- A comparison notebook distinguishing model calculations, assumption-based estimates, empirical evidence and hypotheses. It does not fabricate training-study findings.
-- Install manifest/icons, verified offline caching, cache repair and controlled updates that retain in-progress state.
+A and B have separate settings, body snapshots and movement positions. Copy/swap, undo/redo, movement synchronization and body/load/equipment locks support controlled and practical comparisons. Joint/exercise drafts return when you revisit an exercise; shared view, zoom and pan are saved. Compound and machine comparisons also have persistent workspaces and named libraries.
 
-## Interpreting the results
+Use **Whole workspace backup** to export the current comparison, per-exercise drafts, libraries, compound and machine workspaces, saved research notes, favorites and confirmed training-list mappings. Import previews the included sections, validates them and retains a recovery copy before replacement. An unsaved research note or unapplied machine-curve edit blocks whole-workspace export, restore and the managed app-update reload until you save/apply or explicitly discard it. Navigating between workspaces preserves these open drafts; an ordinary browser reload can still lose unfinished text. Individual comparison, profile, library, notebook and map exports remain available.
 
-A positive external contribution resists the **named reference action**; a negative one assists it. Playback direction does not change that definition. The quantity is about the modeled coordinate and load convention; it is not automatically an individual shoulder moment, muscle tension, or hypertrophy score.
+Data stays in this browser unless you export it. Browser storage can be cleared, so keep a portable backup. The app has no body-measurement upload, telemetry, application account database or automatic cloud synchronization. Private hosted access is handled by the hosting service. A native mobile package is not required or promised.
 
-Force is entered per attachment. Two oblique 100 N cables do not necessarily produce a 200 N resultant. The default pullover A/B examples have different cable counts: use copy-and-change-one-parameter for a controlled geometry comparison. Matching selected mass can still produce different actual force when transmission factors differ.
+## Read the quantities correctly
 
-For a simple gravity example, an upright 5 kg dumbbell raise with 0.70 m straight shoulder-to-grip reach produces about 17.2 N·m at 30° and 34.3 N·m at 90°, with segment weight excluded. The changing leverage explains these numbers; it does not establish a muscle-growth advantage over a cable setup.
+Positive resistance opposes the named reference action; negative resistance assists it. Returning through the movement does not rename that action. Actual attachment force, selected stack mass and resultant force are different quantities. Shared implements and independent loads have explicit conventions; two oblique 100 N cables need not produce a 200 N resultant.
 
-Body estimates scale fictional reference proportions, not a validated individual anthropometric prediction. Support checks preserve modeled segment lengths but do not solve balance, ground reactions or stability. Collision results cover the represented backrest; seats, frames, cable guides and the body are not comprehensive contact models. Friction, inertia, muscle forces and commercial-machine cams require additional models or measurements. These assumptions are detailed in [MECHANICS.md](docs/MECHANICS.md).
+A rotational coordinate yields N·m. A shrug's vertical coordinate yields N. A compound path uses J per unit progress, which must not be labeled as joint torque. Closed-chain support reactions and joint sharing are not reconstructed from the external load alone. A machine's pivot moment becomes an equivalent human-joint contribution only through an explicitly declared alignment/transmission assumption.
 
-The broader exercise wishlist, muscle-model research and commercial-machine calibration in the handoff require their own suitable models and data; unsupported movements are not presented as simulated.
+The views and calculations share the same geometric inputs. Optional body capsules and named seat/frame boxes or capsules let you test represented obstructions; these are simplified proxies. User-declared equipment adjustment bounds are separate from collision geometry and cable-travel limits. Segment lengths, grip closure, support reach, represented contacts and declared cable travel can invalidate a pose or result. **Usable range according to the model** selects a connected permitted portion while retaining the original range. It is a geometric restriction, not an assessment of personal mobility, balance or real-equipment safety.
 
-## Verification and acceptance
+These models do not predict muscle activation, internal muscle forces, exact muscle lengths or hypertrophy. A higher curve answers a specified mechanical question; it does not establish a better exercise. Measured machine data and user observations add evidence without turning a hypothetical mechanism into a calibrated one. See [MECHANICS.md](docs/MECHANICS.md) for equations, assumptions and numerical limits.
 
-[ACCEPTANCE.md](docs/ACCEPTANCE.md) maps all 26 handoff acceptance criteria to implementation and checks. [VERIFICATION.md](docs/VERIFICATION.md) records observed results, and [OFFLINE.md](docs/OFFLINE.md) explains production cache/update verification. Automated browser checks cover desktop, a 360 px phone viewport and phone landscape. Actual Android installation and performance on the user's physical device remain device acceptance, not a claimed result of emulation.
+## Offline use and verification
 
-Use the [comparison guide](docs/COMPARISON_GUIDE.md) for questions and conditional interpretations across the six families, and the [importable examples](public/examples/README.md) for portable starting comparisons. The [extension guide](docs/EXTENDING.md) explains how to add a suitable model or preset. [CHANGELOG.md](CHANGELOG.md) records delivered behavior and decisions.
+On the first production load, wait for **Offline ready** before disconnecting. Install through the browser's offered action or its add-to-home-screen menu. Updates wait for **Save & update**. [OFFLINE.md](docs/OFFLINE.md) describes preparation, cache repair and update behavior.
+
+[ACCEPTANCE.md](docs/ACCEPTANCE.md) maps the handoff requirements and [VERIFICATION.md](docs/VERIFICATION.md) records the checks actually run. Phone emulation is distinct from installation, storage retention and performance on a physical Android device. Source changes and test definitions alone are not evidence of a completed device or physiological validation.
 
 ## Development
 
-Use Node.js 22.12+ and npm. Local setup is for development; the hosted link above is the normal way to test deliveries.
+Use Node.js 22.12+ and npm. The hosted app is the normal feedback route; local commands are for development.
 
 ```sh
 npm ci
 npm run dev
+npm test
+npm run build
+npm run test:e2e
+npm run test:pwa  # Build first; production offline/update checks
+npm run preview
 ```
 
-```sh
-npm test          # Mechanics, state, libraries, analyses, exercise-name matching
-npm run build    # TypeScript + production assets + generated offline worker
-npm run test:e2e  # Interactive browser workflows and responsive layouts
-npm run test:pwa  # Production offline/cache/update workflows (build first)
-npm run preview  # Serve production assets locally
-```
+Install Chromium with `npx playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing executable. Browser suites start or reuse their own servers. Do not build concurrently with the offline-update suite, which temporarily exercises alternate production assets.
 
-Run `npx playwright install chromium` once, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing Chromium executable. Browser tests start/reuse their own development or production servers. Do not run another build while the offline-update tests temporarily exercise alternate build assets.
-
-The app has no account database, telemetry or body-measurement upload. Settings and libraries stay in browser storage; export portable backups because browser storage may be cleared. Private Site access uses the hosting service's account gate.
-
-## Source organization
-
-- `src/engine.ts`: geometry, supports, forces, grip/contact solvers and exercise definitions.
-- `src/state.ts`, `src/library.ts`, `src/training.ts`: state invariants, provenance, persistence and exercise-name matching.
-- `src/Scene.tsx`, `src/Curve.tsx`, `src/BodyDiagram.tsx`: interactive views and measurement landmarks.
-- `src/analysis.ts`, `src/AnalysisPanel.tsx`: comparable metrics, events, differences and interpretation.
-- `src/App.tsx`, `src/WorkspaceTools.tsx`, `src/Field.tsx`: controls, catalog and saved workspaces.
-- `src/offline.ts`, `src/OfflineStatus.tsx`, `scripts/generate-sw.mjs`: installation/offline/update behavior.
-
-Every delivery must include a verified hosted test link, an explanation of the technical and biomechanical work, the checks actually performed, the remaining limits, and the GitHub source location. This requirement is recorded in [AGENTS.md](AGENTS.md).
+The code separates isolated mechanics (`engine.ts`, `isolatedJoints.ts`), compound paths (`compoundEngine.ts`), machine profiles (`machine.ts`), analyses, views and validated persistence. [EXTENDING.md](docs/EXTENDING.md) explains their different contracts. [CHANGELOG.md](CHANGELOG.md) records the development history. Delivery obligations, including a working hosted link and an explanation of the biomechanical meaning, are in [AGENTS.md](AGENTS.md).

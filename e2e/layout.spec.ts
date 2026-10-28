@@ -24,7 +24,7 @@ test('phone landscape keeps both scenes, curves and keyboard controls usable wit
 test('phone landscape supports catalog selection and accessible region tables',async({page})=>{
   await page.goto('/');await page.locator('#catalog>summary').tap();
   await page.getByLabel('Search exercises',{exact:true}).fill('lateral raise');
-  await expect(page.locator('#catalog .catalog-item')).toHaveCount(2);
+  await expect(page.locator('#catalog .catalog-pick').filter({hasText:'Unilateral cable lateral raise'})).toBeVisible();
   await page.locator('#catalog .catalog-pick').filter({hasText:'Unilateral cable lateral raise'}).tap();
   await expect(page.getByLabel('Configuration A preset',{exact:true})).toHaveValue('raise-cable');
   await expect(page.locator('[data-comparison=incompatible]')).toBeVisible();

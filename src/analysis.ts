@@ -1,5 +1,6 @@
-import { compatible, contactAngles, evaluate, getDefinition, getTension, MODEL_VERSION, RAD, type Evaluation, type Profile, type Setup, type Status } from './engine';
+import { compatible, contactAngles, constraintAngles, evaluate, getDefinition, getTension, MODEL_VERSION, RAD, type Evaluation, type Profile, type Setup, type Status } from './engine';
 import type { LabState } from './state';
+import { outletHeight, withOutletHeight } from './equipmentGeometry';
 
 export type AnalysisSample = {
   angle: number;
@@ -44,7 +45,8 @@ const finite = (value: number | null | undefined): value is number => typeof val
 const resultSample = (angle: number, result: Evaluation): AnalysisSample => ({ angle, moment: result.moment, status: result.status, cableMoment: result.cableMoment, gravityMoment: result.gravityMoment });
 
 /** Integrate ordered angular samples without bridging unknown/contact gaps. */
-export function summarizeSamples(samples: AnalysisSample[], requested: [number, number], region: [number, number] | null = requested): RegionSummary {
+export function summarizeSamples(samples: AnalysisSample[], requested: [number, number], region: [number, number] | null = requested, coordinateScale = RAD): RegionSummary {
+  if (!Number.isFinite(coordinateScale) || coordinateScale <= 0) throw new RangeError("Coordinate conversion must be positive and finite.");
   const blank: RegionSummary = { requested, region, coverage: 0, complete: false, minimum: null, maximum: null, mean: null, resistingFraction: null, externalWork: null, cableWork: null, gravityWork: null, samples };
   if (!region || region[1] <= region[0] || samples.length < 2) return blank;
   const span = region[1] - region[0];
@@ -55,19 +57,19 @@ export function summarizeSamples(samples: AnalysisSample[], requested: [number, 
     const width = right.angle - left.angle;
     if (width <= 0 || !finite(left.moment) || !finite(right.moment)) continue;
     validSpan += width;
-    integral += (left.moment + right.moment) / 2 * width * RAD;
+    integral += (left.moment + right.moment) / 2 * width * coordinateScale;
     if (left.moment > 0 && right.moment > 0) positiveSpan += width;
     else if (left.moment > 0 || right.moment > 0) positiveSpan += width * Math.max(left.moment, right.moment) / Math.abs(left.moment - right.moment);
-    if (finite(left.cableMoment) && finite(right.cableMoment)) cableIntegral += (left.cableMoment + right.cableMoment) / 2 * width * RAD;
+    if (finite(left.cableMoment) && finite(right.cableMoment)) cableIntegral += (left.cableMoment + right.cableMoment) / 2 * width * coordinateScale;
     else cableComplete = false;
-    if (finite(left.gravityMoment) && finite(right.gravityMoment)) gravityIntegral += (left.gravityMoment + right.gravityMoment) / 2 * width * RAD;
+    if (finite(left.gravityMoment) && finite(right.gravityMoment)) gravityIntegral += (left.gravityMoment + right.gravityMoment) / 2 * width * coordinateScale;
     else gravityComplete = false;
   }
   const coverage = Math.min(1, validSpan / span);
   const complete = Math.abs(validSpan - span) < EPS && samples.every(sample => finite(sample.moment));
   if (!complete) return { ...blank, coverage };
   const moments = samples.map(sample => sample.moment!);
-  return { ...blank, coverage, complete, minimum: Math.min(...moments), maximum: Math.max(...moments), mean: integral / (span * RAD), resistingFraction: positiveSpan / span,
+  return { ...blank, coverage, complete, minimum: Math.min(...moments), maximum: Math.max(...moments), mean: integral / (span * coordinateScale), resistingFraction: positiveSpan / span,
     // Displayed moment is positive when opposing the reference action, irrespective of q direction.
     externalWork: integral === 0 ? 0 : -integral, cableWork: cableComplete ? cableIntegral === 0 ? 0 : -cableIntegral : null, gravityWork: gravityComplete ? gravityIntegral === 0 ? 0 : -gravityIntegral : null };
 }
@@ -79,12 +81,12 @@ export function regionSummary(setup: Setup, profile: Profile, requested: [number
   if (high <= low) return summarizeSamples([], requested, null);
   const region: [number, number] = [low, high];
   const count = Math.ceil((high - low) / step);
-  const candidates = contactAngles(setup, profile).filter(angle => angle >= low && angle <= high);
+  const candidates = [...contactAngles(setup, profile), ...constraintAngles(setup, profile)].filter(angle => angle >= low && angle <= high);
   const boundaries = [...new Set([low, ...candidates, high])].sort((a,b)=>a-b);
   const midpoints = boundaries.slice(1).map((angle,index)=>(angle+boundaries[index])/2);
   const angles = [...new Set([...Array.from({ length: count + 1 }, (_, i) => low + (high - low) * i / count), ...candidates, ...midpoints])].sort((a,b)=>a-b);
   const samples = angles.map(angle => resultSample(angle, evaluate(setup, profile, angle)));
-  return summarizeSamples(samples, requested, region);
+  return summarizeSamples(samples, requested, region, getDefinition(setup).coordinateScale);
 }
 
 /** Sample in reference-action order, then bisect observed contact and sign boundaries. */
@@ -106,7 +108,7 @@ export function scanEvents(setup: Setup, profile: Profile, spacing = .25): Event
     }
     return at((left.angle + right.angle) / 2);
   };
-  const candidates = contactAngles(setup, profile).filter(angle => angle >= setup.range[0] && angle <= setup.range[1]);
+  const candidates = [...contactAngles(setup, profile), ...constraintAngles(setup, profile)].filter(angle => angle >= setup.range[0] && angle <= setup.range[1]);
   const sortedCandidates = [...new Set([setup.range[0], ...candidates, setup.range[1]])].sort((a,b)=>a-b);
   const intervals = sortedCandidates.slice(1).map((angle,index)=>(angle+sortedCandidates[index])/2);
   const positions = [...new Set([...Array.from({length:count+1},(_,i)=>start+(finish-start)*i/count), ...candidates, ...intervals])].sort((a,b)=>(a-b)*direction);
@@ -148,6 +150,22 @@ function labelValue(value: unknown, factor = 1, unit = ''): string {
   return String(value);
 }
 
+function obstacleDescription(obstacles: Setup['obstacles']): string {
+  if (!obstacles?.length) return 'None represented';
+  const point = (coordinates: number[]) => `(${coordinates.map(value => Number((value * 100).toFixed(3))).join(', ')}) cm`;
+  return obstacles.map(obstacle => {
+    const geometry = obstacle.type === 'box'
+      ? `box; center XYZ ${point(obstacle.center)}; size XYZ ${point(obstacle.size)}`
+      : `capsule; endpoint A XYZ ${point(obstacle.a)}; endpoint B XYZ ${point(obstacle.b)}; radius ${labelValue(obstacle.radius, 100, 'cm')}`;
+    return `${obstacle.name || obstacle.id}: ${geometry}; intended body support ${obstacle.allowBodyContact ? 'allowed' : 'not allowed'}`;
+  }).join('; ');
+}
+
+function equipmentLimitsDescription(limits: Setup['equipmentLimits']): string {
+  if (!limits) return 'No apparatus adjustment limits declared';
+  return `Outlet height ${labelValue([limits.pulleyMin, limits.pulleyMax], 100, 'cm')}; pelvis X ${labelValue([limits.distanceMin, limits.distanceMax], 100, 'cm')}`;
+}
+
 export function comparisonDifferences(state: LabState): Difference[] {
   const [a, b] = state.setups;
   const rows: Difference[] = [];
@@ -156,8 +174,8 @@ export function comparisonDifferences(state: LabState): Difference[] {
   add('Model', 'Joint coordinate and action', `${getDefinition(a).angleLabel}; ${getDefinition(a).action}`, `${getDefinition(b).angleLabel}; ${getDefinition(b).action}`);
   add('Model', 'Force convention', getDefinition(a).forceConvention, getDefinition(b).forceConvention);
   add('Model', 'Resistance source', a.resistance ?? 'cable', b.resistance ?? 'cable');
-  add('Position', 'Selected range', a.range, b.range, 1, '°');
-  add('Position', 'Current angle', state.angles[0], state.angles[1], 1, '°');
+  add('Position', 'Selected range', labelValue(a.range, 1, getDefinition(a).angleUnit), labelValue(b.range, 1, getDefinition(b).angleUnit));
+  add('Position', 'Current coordinate', labelValue(state.angles[0], 1, getDefinition(a).angleUnit), labelValue(state.angles[1], 1, getDefinition(b).angleUnit));
   add('Position', 'Support', a.kind, b.kind);
   add('Position', 'Facing direction', a.facing === 1 ? 'Away from outlets' : 'Toward outlets', b.facing === 1 ? 'Away from outlets' : 'Toward outlets');
   add('Position', 'Torso / backrest inclination¹', a.tilt, b.tilt, 1, '°');
@@ -174,6 +192,33 @@ export function comparisonDifferences(state: LabState): Difference[] {
   add('Load', 'Upper-arm mass', a.upperArmMass, b.upperArmMass, 1, 'kg');
   add('Load', 'Forearm mass', a.forearmMass, b.forearmMass, 1, 'kg');
   add('Load', 'Cable explicitly slack', a.slack ?? false, b.slack ?? false);
+  const extraFields: [string, string, Difference['category'], number, string][] = [
+    ['posture', 'Body posture', 'Position', 1, ''], ['hipY', 'Pelvis lateral position', 'Position', 100, 'cm'],
+    ['movementPlane', 'Movement plane rotation', 'Position', 1, '°'], ['jointPlacement', 'Proximal joint placement', 'Position', 1, '°'],
+    ['bodyRoll', 'Body roll', 'Position', 1, '°'], ['planeOffset', 'Plane offset', 'Position', 100, 'cm'],
+    ['barLength', 'Bar length', 'Equipment', 100, 'cm'], ['rotationLever', 'Forearm rotation lever', 'Equipment', 100, 'cm'],
+    ['cableRadius', 'Represented cable radius', 'Equipment', 1000, 'mm'], ['barRadius', 'Represented bar radius', 'Equipment', 1000, 'mm'],
+    ['outletPositions', 'Explicit outlet XYZ coordinates', 'Equipment', 100, 'cm'],
+    ['cableTravelMin', 'Minimum available cable length', 'Equipment', 100, 'cm'], ['cableTravelMax', 'Maximum available cable length', 'Equipment', 100, 'cm'],
+    ['loadedSides', 'Loaded sides', 'Load', 1, ''], ['freeWeightKind', 'Free-weight convention', 'Load', 1, ''],
+    ['stackArrangement', 'Stack arrangement', 'Load', 1, ''], ['gripStyle', 'Grip annotation', 'Position', 1, ''],
+    ['rotationDirection', 'Forearm rotation action', 'Model', 1, ''],
+    ['forearmRotation', 'Forearm orientation', 'Position', 1, '°'],
+    ['bodyCollision', 'Represented body contact checks enabled', 'Equipment', 1, ''],
+    ['bodyRadius', 'Represented body capsule radius', 'Equipment', 100, 'cm'],
+    ['collisionAttachmentClearance', 'Attachment contact allowance', 'Equipment', 100, 'cm'],
+    ['exploration', 'Explore outside apparatus adjustment limits', 'Equipment', 1, ''],
+    ['loadMode', 'Cable load entry convention', 'Load', 1, ''],
+    ['forceKnown', 'Cable force declared known', 'Load', 1, ''],
+    ['thighMass', 'Thigh mass', 'Load', 1, 'kg'], ['shankMass', 'Shank mass', 'Load', 1, 'kg'], ['handMass', 'Hand mass', 'Load', 1, 'kg'],
+  ];
+  for (const [key, label, category, factor, unit] of extraFields) {
+    const left = (a as unknown as Record<string, unknown>)[key], right = (b as unknown as Record<string, unknown>)[key];
+    if (left !== undefined || right !== undefined) add(category, label, left, right, factor, unit);
+  }
+  add('Equipment', 'Represented seat and frame obstacles', obstacleDescription(a.obstacles), obstacleDescription(b.obstacles));
+  add('Equipment', 'Apparatus adjustment limits', equipmentLimitsDescription(a.equipmentLimits), equipmentLimitsDescription(b.equipmentLimits));
+
   for (const key of Object.keys(state.profiles[0].values) as (keyof Profile)[]) {
     add('Body', key.replace(/[A-Z]/g, char => ` ${char.toLowerCase()}`), state.profiles[0].values[key], state.profiles[1].values[key], 100, 'cm');
     add('Body', `${key} provenance`, state.profiles[0].provenance[key], state.profiles[1].provenance[key]);
@@ -183,22 +228,26 @@ export function comparisonDifferences(state: LabState): Difference[] {
 
 export function parameterSweep(setup: Setup, profile: Profile, region: [number, number], parameter: SweepParameter, offsets: number[] = [-.2,-.15,-.1,-.05,0,.05,.1,.15,.2]): SweepPoint[] {
   if (setup.resistance === 'dumbbell' || setup.resistance === 'unknown' || setup.model === 'machine') return [];
-  return offsets.filter(offset => Number.isFinite(offset) && (parameter !== 'pulleyHeight' || setup[parameter] + offset >= .01)).map(offset => {
-    const value = setup[parameter] + offset;
-    return { value, offset, summary: regionSummary({ ...setup, [parameter]: value }, profile, region) };
+  return offsets.flatMap(offset => {
+    const value = (parameter === 'pulleyHeight' ? outletHeight(setup) : setup.hipX) + offset;
+    if (!Number.isFinite(offset) || !Number.isFinite(value)) return [];
+    const next = parameter === 'pulleyHeight' ? withOutletHeight(setup, value) : { ...setup, hipX: value };
+    if (next.pulleyHeight < .01 || next.pulleyHeight > 5 || next.hipX < -10 || next.hipX > 10
+      || next.outletPositions?.some(point => !Number.isFinite(point[2]) || point[2] < 0 || point[2] > 10)) return [];
+    return [{ value, offset, summary: regionSummary(next, profile, region) }];
   });
 }
 
 export function comparisonReport(state: LabState): string {
   const requested: [number, number] = state.region ?? [Math.max(state.setups[0].range[0], state.setups[1].range[0]), Math.min(state.setups[0].range[1], state.setups[1].range[1])];
   const region = requested[0] < requested[1] ? requested : state.setups[0].range;
-  const summaries = state.setups.map((setup, index) => regionSummary(setup, state.profiles[index].values, region)) as [RegionSummary, RegionSummary];
+  const summaries = state.setups.map((setup, index) => regionSummary(setup, state.profiles[index].values, compatible(state.setups[0], state.setups[1]) ? region : setup.range)) as [RegionSummary, RegionSummary];
   const fmt = (value: number | null, unit: string) => value === null ? 'Not calculated over this complete region' : `${value.toFixed(2)} ${unit}`;
-  const lines = ['EXERCISE BIOMECHANICS LAB — COMPARISON REPORT', state.name || 'Untitled comparison', `Model: ${MODEL_VERSION}`, `Exported: ${new Date().toISOString()}`, '', `Criterion: ${state.criterion || 'Not specified'}`, `Comparison type: ${state.comparisonMode ?? 'practical'}`, `Selected numerical angle region: ${region[0]}–${region[1]}°`, `Compatible complete-region comparison: ${canCompareRegions(state.setups[0], state.setups[1], summaries) ? 'yes' : 'no'}`, ''];
+  const lines = ['EXERCISE BIOMECHANICS LAB — COMPARISON REPORT', state.name || 'Untitled comparison', `Model: ${MODEL_VERSION}`, `Exported: ${new Date().toISOString()}`, '', `Criterion: ${state.criterion || 'Not specified'}`, `Comparison type: ${state.comparisonMode ?? 'practical'}`, `Selected coordinate region: ${compatible(state.setups[0], state.setups[1]) ? `${region[0]}–${region[1]}${getDefinition(state.setups[0]).angleUnit}` : "Individual original ranges; coordinates differ"}`, `Compatible complete-region comparison: ${canCompareRegions(state.setups[0], state.setups[1], summaries) ? 'yes' : 'no'}`, ''];
   state.setups.forEach((setup, index) => {
     const summary = summaries[index], definition = getDefinition(setup), events = scanEvents(setup, state.profiles[index].values);
-    lines.push(`${index === 0 ? 'A' : 'B'}: ${setup.name}`, `Angle: ${definition.angleLabel}; action: ${definition.action}`, `Force convention: ${definition.forceConvention}`, `Region after ROM intersection: ${summary.region?.join('–') ?? 'no overlap'}°; sampled coverage: ${(summary.coverage * 100).toFixed(1)}%`, `Moment minimum / mean / maximum: ${fmt(summary.minimum, 'N·m')} / ${fmt(summary.mean, 'N·m')} / ${fmt(summary.maximum, 'N·m')}`, `External-load work in reference action: ${fmt(summary.externalWork, 'J')}`, `First sampled contact: ${events.firstContact ? events.firstContact.angle.toFixed(2) + '°' : 'none detected'}`, `First sampled reversal: ${events.firstReversal ? events.firstReversal.angle.toFixed(2) + '°' : 'none detected'}`, `Assumptions: ${(evaluate(setup, state.profiles[index].values, state.angles[index]).assumptions ?? []).join('; ')}`, `Body proportions: ${state.profiles[index].referenceModel}; per-value provenance retained in JSON export`, '');
+    lines.push(`${index === 0 ? 'A' : 'B'}: ${setup.name}`, `Coordinate: ${definition.angleLabel} (${definition.angleUnit}); action: ${definition.action}`, `Force convention: ${definition.forceConvention}`, `Region after ROM intersection: ${summary.region?.join('–') ?? 'no overlap'}${definition.angleUnit}; sampled coverage: ${(summary.coverage * 100).toFixed(1)}%`, `External resistance minimum / mean / maximum: ${fmt(summary.minimum, definition.unit)} / ${fmt(summary.mean, definition.unit)} / ${fmt(summary.maximum, definition.unit)}`, `External-load work in reference action: ${fmt(summary.externalWork, 'J')}`, `First sampled contact: ${events.firstContact ? events.firstContact.angle.toFixed(2) + definition.angleUnit : 'none detected'}`, `First sampled reversal: ${events.firstReversal ? events.firstReversal.angle.toFixed(2) + definition.angleUnit : 'none detected'}`, `Assumptions: ${(evaluate(setup, state.profiles[index].values, state.angles[index]).assumptions ?? []).join('; ')}`, `Body proportions: ${state.profiles[index].referenceModel}; per-value provenance retained in JSON export`, '');
   });
-  lines.push('SETTINGS THAT DIFFER', ...comparisonDifferences(state).filter(row => row.different).map(row => `${row.category} / ${row.label}: A ${row.a}; B ${row.b}`), '', 'USER OBSERVATIONS (not computed)', state.observation || 'None recorded', '', 'HYPOTHESIS / NEXT STEP', state.notes || 'None recorded', '', 'INTERPRETATION LIMIT', 'Positive displayed moment resists the declared reference action. External work is negative for a consistently resisting load. Region integrals use radians and trapezoidal integration; unavailable samples are never treated as zero. These are external mechanical calculations, not estimates of muscle tension, activation, energy expenditure or hypertrophy. Event scans combine 0.25° sampling with available analytical contact candidates and refine observed transitions. Numerical tolerances and the represented obstacles limit detection.', '', 'PRIMARY SOURCES', 'OpenStax torque: https://openstax.org/books/university-physics-volume-1/pages/10-6-torque', 'OpenSim scaling: https://opensimconfluence.atlassian.net/wiki/spaces/OpenSim/pages/53089158', 'OpenSim static optimization: https://opensimconfluence.atlassian.net/wiki/spaces/OpenSim/pages/53089619');
+  lines.push('SETTINGS THAT DIFFER', ...comparisonDifferences(state).filter(row => row.different).map(row => `${row.category} / ${row.label}: A ${row.a}; B ${row.b}`), '', 'USER OBSERVATIONS (not computed)', state.observation || 'None recorded', '', 'HYPOTHESIS / NEXT STEP', state.notes || 'None recorded', '', 'INTERPRETATION LIMIT', 'Positive displayed resistance resists the declared reference action. External work is negative for a consistently resisting load. Region integrals use radians for rotations or metres for translation with trapezoidal integration; unavailable samples are never treated as zero. These are external mechanical calculations, not estimates of muscle tension, activation, energy expenditure or hypertrophy. Event scans combine 0.25 coordinate-unit sampling with available analytical contact candidates and refine observed transitions. Numerical tolerances and the represented obstacles limit detection.', '', 'PRIMARY SOURCES', 'OpenStax torque: https://openstax.org/books/university-physics-volume-1/pages/10-6-torque', 'OpenSim scaling: https://opensimconfluence.atlassian.net/wiki/spaces/OpenSim/pages/53089158', 'OpenSim static optimization: https://opensimconfluence.atlassian.net/wiki/spaces/OpenSim/pages/53089619');
   return lines.join('\n');
 }

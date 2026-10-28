@@ -1,97 +1,139 @@
-# Exercise mechanics: conventions, models and validation
+# Mechanics, coordinates and interpretation
 
-Model version: `biomechanics-2`. The handoff remains unchanged. The engine now covers the twelve first-release scenarios through six distinct mechanical families, plus a geometry-only unknown-machine illustration.
+The application has three mechanical contracts: isolated coordinates, prescribed compound paths and machine-input profiles. Their version constants live with their engines. They share a purpose—make an external mechanical comparison inspectable—but their outputs are not interchangeable. [COVERAGE.md](COVERAGE.md) maps the exercise families; [VERIFICATION.md](VERIFICATION.md) records observed checks.
 
-## Models and coordinates
+## Isolated coordinates
 
-The world frame is right handed: X points from the nominal cable outlet plane into the room, Y is lateral, and Z is vertical. An outlet can be offset in X explicitly. Lengths are metres and forces are newtons. Public angles are degrees; internal derivatives use radians.
+The world frame is right handed: X runs from the nominal outlet plane into the room, Y is lateral and Z is vertical. Lengths are stored in metres and forces in newtons. Explicit outlet XYZ coordinates can replace the symmetric outlet arrangement. Body placement, equipment placement and measurement values remain independent inputs.
 
-| Scenarios | Coordinate and reference action | Represented mechanism |
+| Model | Coordinate and named reference action | Output |
 |---|---|---|
-| Classic, outside, inside and bench pullover | Upper-arm elevation; bring the arms toward the torso (decreasing angle) | Symmetric shoulder motion with a fixed true elbow bend and a rigid bar |
-| Low-cable and Bayesian curl | Elbow flexion; flex the elbow (increasing angle) | Forearm/hand rotate about a fixed elbow; upper-arm placement is independent |
-| Pushdown and overhead extension | Elbow flexion; extend the elbow (decreasing angle) | Elbow mechanism with different upper-arm placement and cable routing |
-| Cable and dumbbell lateral raise | Arm elevation; raise the arm (increasing angle) | One loaded arm in a frontal plane; optional prescribed supported torso lean |
-| Bilateral cable fly | Horizontal adduction from lateral; bring the hands forward (increasing angle) | Two independent handles, mirrored arm motion and separate derivatives |
-| Cable hip extension | Hip extension from neutral; move the thigh backward (increasing angle) | Straight thigh/shank chain rotating at one hip with an ankle attachment; opposite leg supports the body |
-| Unknown pullover machine | Illustrative upper-arm elevation | No fabricated resistance mechanism, curve or numerical moment |
+| Pullover | Upper-arm elevation; bring the arms toward the torso | Total external contribution to the declared symmetric shoulder movement |
+| Curl / triceps extension | Elbow flexion; flex / extend the elbow | External contribution about the declared elbow coordinate |
+| Raises | Arm elevation in a selected plane; raise the arm | External contribution for the declared loaded side(s) |
+| Fly / reverse fly | Adduction in the selected movement plane; adduct / open the arms | Declared unilateral or bilateral contribution, with per-load derivatives |
+| Hip extension / abduction / adduction | Hip coordinate with the ankle attachment and pelvic frame | External contribution for the active leg |
+| Knee extension / flexion | Knee coordinate with prescribed thigh placement | External contribution about that knee coordinate |
+| Wrist flexion / extension | Wrist coordinate with an explicit hand/load lever | External wrist-axis contribution |
+| Forearm rotation | Pronation/supination about a declared forearm axis and lever | External rotational contribution; not a grip-strength or muscle model |
+| Shrug | Shoulder-girdle elevation in centimetres | External force in N, conjugate to translation in metres |
 
-For upper-arm elevation, 0° follows the torso toward the hips, and 180° extends toward the head. The angle continues beyond 180° without folding through inverse cosine. It describes simplified humerothoracic elevation, not isolated glenohumeral motion; no anatomical scapular model is included. Elbow flexion uses 0° for a straight elbow. Hip extension uses 0° for the straight leg along the hipward torso direction.
+Rotational values are N·m. The public rotation controls use degrees, but derivatives use radians. Shrug derivatives use metres; its displayed centimetres are converted before integration. `getDefinition` declares `angleUnit`, `coordinateScale`, output unit, reference action and `metricKey`. Matching units alone does not make two coordinates or load conventions comparable.
 
-Standing torso tilt is from vertical; a bench angle is above the floor. Lateral raises use a frontal lean, while pullover/curl/extension use sagittal torso inclination. Facing transforms body directions and the joint axis together. Drawings, forces, collisions and curves all consume the same three-dimensional geometry.
+Upper-arm elevation has 0° alongside the torso and 180° toward the head, continuing beyond alignment without inverse-cosine folding. It is simplified humerothoracic geometry, not an isolated glenohumeral measurement or an anatomical scapular model. Elbow flexion is zero at a straight elbow. The selected movement plane changes actual trajectories and derivatives; for example, inclined fly planes are distinct from changing only outlet height.
 
-`getDefinition` declares each coordinate, reference action, positive action direction and metric key. `compatible` permits overlays only for matching metric meanings; curl and extension have opposite reference actions and are deliberately separate. Unilateral and bilateral elbow totals are not silently overlaid. A cable and dumbbell lateral raise can be compared on the same unilateral coordinate.
+Standing torso tilt is measured from vertical; bench inclination is above the floor. Facing, body roll, proximal-joint placement and movement plane transform the represented geometry. Grip-style names are annotations unless the model explicitly uses a rotational coordinate; they do not alter inferred muscle recruitment.
 
-## Forces, signs and units
+## Force and sign conventions
 
-For attachment H, fixed final outlet P and nonnegative tension T:
+For attachment H, final outlet P and nonnegative actual attachment tension T:
 
 `F = T (P − H) / |P − H|`
 
-A cable pulls toward its outlet. Coincident endpoints are singular and produce no force arrow or moment. The distance tolerance is 10⁻⁹ m. T is actual force **per attachment**, not selected stack mass. In explicit mass mode:
+A cable pulls toward the outlet. Coincident endpoints have an undefined direction. The engine retains a singular/unknown result instead of drawing an invented force vector.
+
+In selected-mass mode:
 
 `T = selectedMass × 9.81 × transmissionFactor`
 
-The factor is attachment force divided by selected mass times gravity. Its absence means force is unknown. The engine cannot determine stack topology or whether a manufacturer's display already includes a transmission correction.
+The factor relates selected mass to actual attachment force. Its absence leaves force unknown. A stack/topology label does not independently determine that factor. Matching displayed kilograms can therefore fail to match actual force.
 
-For a model coordinate q in radians, the generalized force is:
+For the model's SI coordinate q:
 
 `Q = Σ Fᵢ · dHᵢ/dq`
 
-For fixed outlets, the independent cable-work check is `Q = −Σ Tᵢ dLᵢ/dq`. The displayed resisting contribution is:
-
 `R = −actionDirection × Q`
 
-Thus **positive resists the named reference action; negative assists it**, regardless of playback direction. The unit is N·m. Movement progress is only a synchronization control; it is never used as a dimensionless derivative mislabeled N·m. Every fly handle has its own mirrored derivative; the engine does not reuse one arm's derivative or cancel opposite joint axes incorrectly.
+Positive displayed R resists the named action; negative R assists it. Playback direction does not redefine that action. For fixed outlets, `Q = −Σ Tᵢ dLᵢ/dq` supplies an independent virtual-work check. A rotational fixed-axis component can also be calculated as `a · ((H − O) × F)`.
 
-For an independent fixed axis, `axisMoment` implements `a · ((H − O) × F)`. For the bar pullover, the result is total contribution to the symmetric movement. It is not an inferred force distribution or individual shoulder moment. Cable tension, summed tensions and resultant force magnitude are distinct quantities.
+Pullover rigid-bar output is a contribution to symmetric movement. It does not identify individual shoulder force sharing. Independent handles have their own application points and derivatives. Cable tensions, their scalar sum and the magnitude of the vector resultant remain different quantities.
 
-The visual near-zero region is 1.5% of the sum of `|force| × |application-point derivative|`, with a small numerical floor. This is a display tolerance, not a physiological threshold. The actual signed value is retained.
+The near-zero display tolerance scales with the represented forces and derivatives, with a numerical floor. It is not a physiological threshold. Specified zero loading, cable slack, unknown force, unavailable travel and singular geometry remain distinct states.
 
-## Gravity and load availability
+## Gravity, masses and load sharing
 
-Dumbbell weight acts vertically downward at the loaded grip: `Fgravity = [0, 0, −mass × 9.81]`. A unilateral raise has one weight; it is not doubled. The optional arm-segment model requires explicit upper-arm and combined forearm/hand masses. It assumes uniform rods, with centres at segment midpoints; these are declared mechanical assumptions, not personalized anatomical mass estimates. Segment masses are never inferred from height.
+Gravity acts downward: `Fgravity = [0, 0, −mass × 9.81]`. In the isolated engine, dumbbell mass is per loaded hand; an explicitly shared implement/barbell mass is total and is counted once. This is a declared symmetric convention, not a solved hand-force distribution. Force locking uses the same convention as the engine.
 
-Curl/extension upper-arm gravity contributes zero to the elbow coordinate because the upper arm is fixed. Lateral-raise lean changes the arm's orientation to world gravity. Fly segment gravity can be zero about its horizontal-adduction coordinate while the segments still have weight. Hip segment gravity uses explicitly supplied masses for the moving thigh and shank, with midpoint centres. The support leg is fixed with respect to that coordinate and contributes zero to its generalized effect. Missing requested masses give an unknown total instead of invented values.
+Optional segment gravity requires the relevant explicit masses. Uniform segment centres are an assumption. A fixed upper arm does no generalized work about the elbow coordinate, while the moving forearm/hand can. The active thigh/shank and hand/forearm models use their corresponding masses. Requested but missing mass inputs make the total unavailable; they are not inferred from stature.
 
-The result exposes cable and gravity contributions separately and sums them only when both are known. An unknown cable force keeps the total unknown even if a gravity component can be calculated. A specified zero force, a slack cable, a singular direction and a near-zero moment remain different states. A slack cable contributes zero force; its hanging route is not predicted, so straight-line cable/backrest contact is not asserted for it. Known gravity can still produce a nonzero total when the cable is slack.
+Cable and gravity contributions are exposed separately. A known gravity component does not make an unknown cable total known. Slack cable force is zero, but its hanging route is not predicted; straight-line cable clearance cannot be certified for it. Declared free-cable-length limits make attachment force unavailable outside their domain.
 
-All models are quasi-static. Speed, inertia, elastic cable behavior, friction and bar weight are excluded. Cable tension/travel are assumed available unless slack or unknown force is explicitly selected. The engine does not infer a resting stack or travel stop.
+The isolated and compound calculations are quasi-static. Inertia, friction, elasticity and unspecified implement weights are excluded. A real apparatus needs the appropriate measured forces, dimensions and routing before its numbers describe that apparatus.
 
 ## Body dimensions, grips and supports
 
-The default 1.75 m profile is a fictional demonstration: 33 cm upper arm, 27 cm forearm, 10 cm wrist-to-grip offset, 59 cm hip-to-shoulder torso, 42 cm shoulder width, 43 cm thigh, 43 cm shank, 24 cm foot length, 30 cm pelvis width and 24 cm shoulder-to-crown offset. Height scaling is an editable illustrative estimate, not a population percentile or validated individual prediction. User measurements, provenance and locks belong to the profile/storage layer.
+Default proportions are fictional editable examples. Height scaling is an illustrative estimate, not an individual anthropometric prediction. Profile storage records examples, estimates and user measurements, with locks. Changing height preserves measured/locked segments; explicit regeneration affects eligible estimates only.
 
-The pelvis/seat and equipment remain anchored when body dimensions change. Torso length moves the shoulders; it does not move the bench or pulleys. Segment-specific changes recompute reach, directions, moments and contacts. Foot length is a horizontal heel-to-toe dimension. A declared 6 cm ankle-to-floor offset is separate from it. The neutral vertical reference stature is thigh + shank + 6 cm + torso + shoulder-to-crown; this convention is separate from the bent or leaning current pose.
+A body edit recomputes reach, forces and represented constraints while keeping explicit equipment and pelvis anchors fixed. Shoulder width, grip spacing, attachment spacing and bar length are distinct inputs. Standing height is a reference stature; it is not the current pose's vertical extent. The model's ankle-to-floor offset is separate from heel-to-toe foot length.
 
-Standing and seated legs use exact two-link inverse kinematics. For thigh length a, shank length b and hip-to-ankle distance d, a solution requires `|a − b| ≤ d ≤ a + b`. Standing ankles are 6 cm forward of the hips; the hip-extension support ankle is directly below its hip to permit a straight active neutral leg. Seated ankles are 48 cm forward. Kneeling uses a grounded knee and horizontal lower leg. These are explicit placement assumptions; inconsistent measurements/placements are rejected rather than stretching limbs. Full-body balance and support reaction forces are not calculated.
+Two-link support geometry preserves thigh/shank lengths. For segment lengths a and b and endpoint distance d, closure requires `|a − b| ≤ d ≤ a + b`. Standing, seated, kneeling and supported/lying poses have declared placement assumptions. An impossible constraint produces an invalid pose instead of stretching limbs. Support placement does not solve balance, joint reactions, comfort or stability.
 
-Pullover upper arms remain in parallel sagittal planes. Grip width defaults to shoulder width but can be changed with a constrained symmetric solver. For distal length R, actual fixed elbow bend β and lateral grip offset `δ = (gripWidth − shoulderWidth)/2`:
+For a symmetric rigid-bar pullover, distal length R, elbow bend β and lateral grip offset `δ = (gripWidth − shoulderWidth)/2` give:
 
-- `r = sqrt(R² − δ²)` is the sagittal distal reach.
-- `γ = acos(R cos(β)/r)` is the derived sagittal bend.
-- The actual forearm/hand vector contains lateral component ±δ and sagittal component `r × direction(q + γ)`.
+`r = sqrt(R² − δ²)` and `γ = acos(R cos β / r)`.
 
-A solution requires `|δ| ≤ R |sin β|`; a straight elbow therefore permits only the matching shoulder-width grip. Both hands must also lie on the fixed bar, and attachments must fit it. Incompatible combinations are marked invalid, with a preserved-length illustrative pose. The individual wrist points split the true distal vector using the separate forearm/hand dimensions. The default bar length depends on equipment attachment spacing (plus 8 cm, minimum 60 cm), not body dimensions; an explicit bar length overrides it.
+The distal vector combines lateral offset ±δ with sagittal reach r. A solution needs `|δ| ≤ R |sin β|`; straight elbows therefore cannot accommodate arbitrary grip widths in this model. Hands and attachments must also fit the bar. Independent-handle models do not inherit that rigid-bar constraint.
 
-Independent-handle fly/raise/elbow models do not inherit rigid-bar constraints. A supported leaning raise prescribes support without calculating its reaction. None of these support assumptions establishes comfort, stability or training suitability.
+## Contacts, limits and usable portions
 
-## Contact and movement events
+Contact checks use the actual three-dimensional geometry, rather than a crossing in one projection. The backrest is an oriented box; cable/bar radii are explicit model dimensions. Radius-expanded box corners are conservative. Optional body collision uses illustrative segment capsules with a default radius of 0.06 m and a head sphere; feet and the small forearm-rotation lever are excluded. Named equipment obstacles are axis-aligned boxes or capsules representing seats, frames or other objects. Cable/bar checks use the full segment against equipment obstacles; only the terminal body/grip allowance is trimmed for body checks. Enabled body-versus-obstacle checks can exempt an explicitly declared intentional support through `allowBodyContact`. These are approximations, not scanned anatomy or a complete commercial-machine model. Body-body self-collision and soft-tissue deformation are not solved. Contact invalidates the relevant direct mechanical path; no cable sliding around an obstacle is invented.
 
-The backrest is an oriented box in the same orthonormal frame used by the renderer. Cables and the bar are tested in space with 3 mm and 15 mm radii. Radius inflation uses a conservatively expanded box, including its corners. A side-view cable crossing can pass outside the backrest laterally. Cable–backrest contact invalidates the direct cable force calculation; a rigid bar contact invalidates that position. The curve has a gap rather than a zero value. No routing around equipment is invented.
+For fixed rotational paths, moving points have the form `H(q) = C + A cos(q) + B sin(q)`. Analytic box-face and outlet/edge-plane candidates expose narrow represented backrest contacts and tangencies. Translational shrug paths use affine candidates. Declared cable-travel boundaries use the corresponding length equations. Candidate points and intervening intervals are re-evaluated by the ordinary engine; irrelevant roots do not themselves count as contact.
 
-Contact detection across the movement uses the structure of these single-coordinate models. With fixed outlets and pose, each attachment follows `H(q) = C + A cos(q) + B sin(q)`. Candidate contact angles are solved analytically where the endpoint crosses a box face or the cable lies in a plane through the outlet and a box edge. The bar's fixed lateral span and moving sagittal coordinates use box-face candidates. Sampling each resulting interval, its boundaries and adjacent points prevents a narrow modeled contact from disappearing between ordinary 0.5° plot samples. Candidate planes can produce irrelevant roots; every point is re-evaluated through the ordinary contact engine.
+New body/equipment proxies use conservative continuous distance bounds and endpoint-speed bounds to subdivide possible contact intervals. Unresolved cells at or below 0.001 coordinate units remain unavailable, rather than being declared clear. A work-budget fallback can leave a wider interval unavailable. This conservatism can exclude a close passage; it does not establish personal safety.
 
-These guarantees apply to the represented inflated box and harmonic paths, subject to numerical tolerance. A future coupled-joint path, moving outlet, different cable routing or different obstacle must supply its own event method. Mechanical reversals are separate events and are refined independently; neither event implies the other.
+User-declared equipment adjustment limits bound signed pelvis X and outlet height. The explicit exploration override relaxes these input bounds only; it does not disable contacts, support checks or cable-travel limits.
 
-The backrest is the implemented collision obstacle. Seats, frame uprights, cable guides and the full body are not certified collision volumes. Ground/support checks are additional kinematic validity checks, not a comprehensive equipment-clearance certificate.
+`usableRange.ts` also partitions represented floor and singularity boundaries. A small numerical inset keeps selected endpoints on the permitted side. It returns separate connected portions instead of joining across a narrow contact, travel violation or tangent barrier. Unknown routing/mechanisms and slack paths remain unavailable for this constraint. Unknown force magnitude can still have a known geometric route.
 
-## Verification and extension
+Same-coordinate mode intersects clear coordinate intervals. Equal-progress mode maps each original range in its declared action direction before intersecting. Original ranges remain unchanged; selecting another disconnected portion is explicit. Editing equipment/body values recomputes the constraints. A clear portion is not a personal range-of-motion or safety assessment.
 
-The **Usable range according to the model** control uses [usableRange.ts](../src/usableRange.ts) and [motionConstraint.ts](../src/motionConstraint.ts) to constrain motion to one connected clear interval. Analytic contact and harmonic floor/singularity candidates partition the original range; unavailable boundary points receive a small numerical inset. Equal-angle mode intersects angular intervals, and equal-progress mode intersects intervals in each movement's original action-oriented progress coordinate. The original ranges are retained. Unknown mechanisms and slack cable routes cannot supply this constraint; unknown force magnitude with a defined taut route can still supply geometric clearance. A clear interval covers represented constraints only and does not establish individual mobility, balance or clearance from unmodeled objects.
+Mechanical reversals are separate from contact and travel boundaries. Sampled extrema, sign changes and geometry checks have finite resolution and numerical tolerances. The harmonic/affine event methods do not automatically apply to arbitrary coupled paths, moving outlets or unrepresented obstacles. Compound collision clearance is not solved by the isolated engine's contact module.
 
-`src/engine.test.ts` covers analytical signed moments, oblique three-dimensional forces, explicit transmission, force scaling, finite-difference cable work, facing/rotation/translation invariance, angles past 180°, every family, asymmetric fly derivatives, unilateral loading, gravity additivity, known/unknown/slack states, preserved segment lengths, support infeasibility, rigid-grip closure and spatial contact boundaries. Each of the twelve release scenarios has a valid representative-pose test.
+## Compound paths and eligible arm moments
 
-The engine models geometry and external mechanics. It does not calculate muscle tension, exact muscle length, joint reaction forces, activation, relative effort or hypertrophy. A mechanical preference requires matched force conventions, a chosen coordinate/range and a defined criterion. Anatomical interpretations and growth hypotheses require separate evidence.
+The compound workspace uses an explicitly prescribed progress coordinate `p ∈ [0,1]`. Segment lengths, support points, load positions, gravity and any assistance are inputs. Body-segment masses begin as editable fictional values, not estimates from height. Compound external mass is total; when split between two hands, equal sharing is an explicit convention. Cable tension is per active cable.
 
-To add a family: define its coordinate/action/metric key; produce rigid geometry and per-attachment derivatives; declare applied loads and support constraints; specify valid collisions/events; provide a meaningful preset and an analytical fixture. Never implement a new exercise by relabeling unrelated kinematics. A real machine needs measured or specified mechanism data before its geometry-only status can become quantitative.
+The displayed path resistance is:
+
+`Rpath = −Σ Fᵢ · dHᵢ/dp`.
+
+Its unit is **J per unit progress**, because progress is dimensionless. It describes the external contribution along that path. It is not a shoulder, hip, knee or spinal torque. Body-segment gravity and entered assistance participate in this sum. Finite differences estimate the path derivative; unavailable neighbouring poses leave the result unavailable.
+
+Stationary represented supports do no work along their fixed points, but their reaction distribution can still matter for individual joints. If a prescribed support moves and its unknown reaction could do work, a total path contribution is not supplied. The workspace does not solve impact, friction, balance or force redistribution when a foot leaves or reaches a support.
+
+Selected fixed-torso open-arm models also calculate external shoulder/elbow components about their declared sagittal axes, using distal applied loads and relevant arm weights. These axis components are separate from the named-action sign of path resistance. Trunk support reactions, joint contact forces and muscle sharing remain unresolved. Pallof's explicitly labeled cable moment about the pelvis is not a spinal joint torque.
+
+Closed-chain pull-ups, push-ups, squats and related paths therefore do not acquire universal joint-moment readouts. Smith/hack/landmine/T-bar/leg-press examples retain their stated guide, lever or unknown-mechanism assumptions. An illustrative commercial name does not specify a transmission.
+
+## Machine profiles
+
+Machine A/B profiles use a separate input-angle contract. Supported mechanisms include a plate-loaded lever, ideal cable/belt transmission, supplied effective cam arm, specified four-bar linkage and supplied/measured angle–force or angle–moment data.
+
+- Lever moment follows plate gravity at the entered radius/offset.
+- Cable/belt moment uses actual tension × drum radius × declared travel ratio, with winding sign.
+- A cam uses supplied effective moment-arm samples; a schematic drawing does not reconstruct its physical outline.
+- A four-bar mechanism requires closure and a nonsingular transmission derivative. Its load geometry is explicit; bearing friction and unspecified link mass are excluded.
+- Data curves use linear interpolation within their supplied domain. Lifting and lowering are distinct branches. No branch or out-of-domain value is fabricated. Supplied absolute uncertainty is interpolated as a bound, not converted into statistical confidence.
+
+Theoretical examples remain theoretical. Measured/supplied curves retain source, machine identity and protocol metadata. A force profile remains in N until a signed machine-input moment arm is supplied. Machine pivot moment is not human-joint moment.
+
+An optional conversion uses the declared relation `machineAngle = ratio × jointAngle + offset`, giving `jointMoment = machineMoment × ratio` by virtual work. Alignment/ratio and a justification are required. This is a conditional equivalent external contribution, not an internal joint load or a general model of human-machine contact. A/B overlays additionally require compatible units/action and confirmed coordinate equivalence.
+
+## Integration, search and evidence
+
+Region work integrates external contribution over radians for rotations or metres for translation. A consistently resisting load does negative external work in the reference action. Integration does not bridge unavailable samples. These results are not muscle work, metabolic energy expenditure or a hypertrophy dose.
+
+Prescribed-speed power supplies a user-chosen velocity: `Pexternal = −R × speedSI` along the named action. It remains a quasi-static estimate; actual accelerations would require inertia. Compound progress is not substituted into an angular formula.
+
+Placement search varies only the named equipment/body-placement coordinates. It fixes actual force, force convention, body profile and original ROM; full-ROM geometry and sampled assistance constraints are explicit. Height shifts explicit outlets together, retaining their relative positions. Multiple non-dominated sampled candidates trade objective value against relocation and measurement sensitivity. A finite grid is not a global optimum.
+
+User-selected uncertainty intervals are explored through a baseline and discrete perturbation scenarios. The resulting envelope is not a measured confidence interval or a guaranteed bound between samples. Requiring every scenario to pass is a robustness check on those scenarios, not proof over all possible anatomy or equipment error.
+
+Research notes distinguish calculations, assumption-dependent estimates, personal observations, empirical findings and hypotheses. An explicit source selector captures the joint, compound or machine workspace with its validated configuration, current coordinates, body dimensions where applicable, and supplied data/provenance. Compound/machine attachments travel with the notebook and whole-workspace backup; an older note without an attachment retains its joint snapshot. Source-specific restore preserves replaced workbench data in a recovery copy. Known joint-mechanics migrations are disclosed; unsupported compound/machine schemas are rejected rather than silently reinterpreted. A citation does not verify its interpretation automatically. Relevant training evidence must address the population, movement, range, volume/effort, duration, outcome measurement and uncertainty before a mechanical result is promoted to a growth claim.
+
+## Sources and verification
+
+Method references include [OpenStax torque](https://openstax.org/books/university-physics-volume-1/pages/10-6-torque), [rotational work and power](https://openstax.org/books/university-physics-volume-1/pages/10-8-work-and-power-for-rotational-motion), [OpenSim scaling](https://opensimconfluence.atlassian.net/wiki/spaces/OpenSim/pages/53089158) and [OpenSim static optimization](https://opensimconfluence.atlassian.net/wiki/spaces/OpenSim/pages/53089619). They support the mechanics/modeling discussion, not a ranking of exercises for hypertrophy.
+
+Analytical fixtures, finite-difference work checks, sign/axis tests, geometry invariants, validity boundaries, persistence tests and browser workflows test the declared software models. [VERIFICATION.md](VERIFICATION.md) reports the runs actually completed. [EXTENDING.md](EXTENDING.md) explains how to add a model without inheriting unsupported assumptions.

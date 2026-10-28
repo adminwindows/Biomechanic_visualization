@@ -17,7 +17,7 @@ async function openGroup(page: Page, side: 'A' | 'B', title: string) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('A different setup.');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Understand your setup.');
 });
 
 test('renders comparable scenes, responsive controls and a readable curve without runtime errors', async ({ page }) => {

@@ -310,4 +310,62 @@ describe('expanded exercise state and migrations', () => {
     state.profiles[0].provenance.thigh = 'measured';
     expect(() => validateState(state)).toThrow('dimension, provenance, and lock together');
   });
+  it('preserves expanded joint, cable geometry and view framing with physical bounds', () => {
+    const state = createInitialState(); state.sync = 'independent';
+    state.setups[0] = { ...state.setups[0], model: 'wrist-flexion', range: [-60, 60], posture: 'side-lying', hipY: .2, movementPlane: 45, jointPlacement: 30, bodyRoll: 90, loadedSides: 'bilateral', gripStyle: 'neutral', freeWeightKind: 'barbell', rotationLever: .1, rotationDirection: 'supination', outletPositions: [[.2, -.4, 2], [.2, .4, 2]], cableRadius: .005, barRadius: .02, cableTravelMin: .2, cableTravelMax: 3, stackArrangement: 'shared', segmentGravity: true, handMass: .4 };
+    state.angles[0] = 0; state.viewFraming = { view: 'top', zoom: 3.5, pan: [1.2, -.8] };
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    const bad = structuredClone(state); bad.setups[0].cableTravelMin = 4;
+    expect(() => validateState(bad)).toThrow('minimum cable travel');
+    bad.setups[0].cableTravelMin = .2; bad.setups[0].handMass = undefined;
+    expect(() => validateState(bad)).toThrow('moving hand mass');
+    for (const frame of [{ view: 'orbit', zoom: 1, pan: [0, 0] }, { view: 'side', zoom: 4.1, pan: [0, 0] }, { view: 'side', zoom: 1, pan: [Infinity, 0] }]) expect(() => validateState({ ...state, viewFraming: frame })).toThrow();
+  });
+  it('accepts unknown stack transmission and uses actual per-hand force for total bar mass', () => {
+    const state = createInitialState(); state.setups[0].loadMode = 'mass'; state.setups[0].loadMass = 30; state.setups[0].stackArrangement = 'shared';
+    delete state.setups[0].transmissionFactor;
+    expect(validateState(state).setups[0].transmissionFactor).toBeUndefined();
+    expect(forceValue(state.setups[0])).toBeNull();
+    state.lockForce = true;
+    expect(() => validateState(state)).toThrow('known, equal');
+    expect(forceValue({ ...state.setups[0], resistance: 'dumbbell', freeWeightKind: 'barbell', loadedSides: 'bilateral', loadMass: 20 })).toBeCloseTo(98.1);
+    expect(forceValue({ ...state.setups[0], resistance: 'dumbbell', freeWeightKind: 'dumbbell', loadedSides: 'bilateral', loadMass: 20 })).toBeCloseTo(196.2);
+    expect(forceValue({ ...state.setups[0], resistance: 'dumbbell', freeWeightKind: 'shared', loadedSides: 'bilateral', loadMass: 20 })).toBeCloseTo(98.1);
+  });
+  it('checks explicit outlet positions under equipment lock by value', () => {
+    const state = createInitialState(); state.setups[1] = structuredClone(state.setups[0]); state.lockEquipment = true;
+    state.setups[0].outletPositions = [[0, -.5, 2], [0, .5, 2]];
+    state.setups[1].outletPositions = structuredClone(state.setups[0].outletPositions);
+    expect(validateState(state).lockEquipment).toBe(true);
+    state.setups[1].outletPositions[0][2] = 1;
+    expect(() => validateState(state)).toThrow('Same-equipment');
+  });
+  it('preserves biomechanics-2 original text before migrating to the expanded model', () => {
+    const old = { ...createInitialState(), modelVersion: 'biomechanics-2' }, original = JSON.stringify(old);
+    const memory = new Map([[STORAGE_KEY, original]]);
+    vi.stubGlobal('localStorage', { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value) });
+    const migrated = loadState();
+    expect(migrated.state.modelVersion).toBe(MODEL_VERSION); expect(migrated.backupKey).toBeTruthy();
+    expect(memory.get(STORAGE_KEY)).toBe(original); expect(memory.get(migrated.backupKey!)).toBe(original);
+    expect(saveState(migrated.state)).toBe(true); expect(memory.get(migrated.backupKey!)).toBe(original);
+  });
+
+  it('round-trips bounded collision primitives and signed equipment travel limits', () => {
+    const state = createInitialState();
+    Object.assign(state.setups[0], { hipX: 8, bodyCollision: true, bodyRadius: .08, collisionAttachmentClearance: .12, exploration: false, forearmRotation: 180, equipmentLimits: { pulleyMin: .2, pulleyMax: 2.4, distanceMin: -2, distanceMax: 2 }, obstacles: [{ id: 'seat', name: 'Seat cushion', type: 'box', allowBodyContact: true, center: [0, 0, .4], size: [.4, .5, .12] }, { id: 'frame', name: 'Frame upright', type: 'capsule', allowBodyContact: false, a: [1, 0, 0], b: [1, 0, 2], radius: .04 }] });
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    const bad = JSON.parse(JSON.stringify(state));
+    bad.setups[0].obstacles[0].allowBodyContact = 'yes';
+    expect(() => validateState(bad)).toThrow('Intended body support contact');
+    bad.setups[0].obstacles[0].allowBodyContact = true;
+    bad.setups[0].obstacles[0].size[0] = 0;
+    expect(() => validateState(bad)).toThrow('Obstacle size');
+    bad.setups[0].obstacles[0].size[0] = .4; bad.setups[0].obstacles[1].id = 'seat';
+    expect(() => validateState(bad)).toThrow('unique');
+    bad.setups[0].obstacles[1].id = 'frame'; bad.setups[0].obstacles[1].a = [NaN, 0, 0];
+    expect(() => validateState(bad)).toThrow('Obstacle endpoint');
+    bad.setups[0].obstacles[1].a = [1, 0, 0]; bad.setups[0].equipmentLimits.distanceMin = 3;
+    expect(() => validateState(bad)).toThrow('minima');
+  });
+
 });

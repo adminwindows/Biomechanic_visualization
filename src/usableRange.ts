@@ -1,6 +1,6 @@
 import {
   ANKLE_HEIGHT, BAR_RADIUS, NUMERIC_EPSILON, RAD,
-  contactAngles, evaluate, geometry,
+  contactAngles, constraintAngles, evaluate, geometry, getDefinition,
   type Geometry, type Profile, type Setup,
 } from "./engine";
 
@@ -46,15 +46,23 @@ export function usableIntervals(setup: Setup, profile: Profile): UsableRange {
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return { intervals: [], known: false };
   if (start === end) return { intervals: [], known: true };
   try {
-    const poses = [0, 90, 180].map((angle) => geometry(setup, profile, angle));
-    const candidates = [start, end, ...contactAngles(setup, profile)];
+    const linear = getDefinition(setup).angleUnit === "cm";
+    const poses = (linear ? [0, 1, 2] : [0, 90, 180]).map((angle) => geometry(setup, profile, angle));
+    const candidates = [start, end, ...contactAngles(setup, profile), ...constraintAngles(setup, profile)];
     const roots = (read: (pose: Geometry) => number, level: number) => {
-      candidates.push(...crossingAngles(poses.map(read) as [number, number, number], level, setup.range));
+      const values = poses.map(read) as [number, number, number];
+      if (linear) {
+        const slope = values[1] - values[0];
+        if (Math.abs(slope) > 1e-12) {
+          const coordinate = (level - values[0]) / slope;
+          if (coordinate >= start && coordinate <= end) candidates.push(coordinate);
+        }
+      } else candidates.push(...crossingAngles(values, level, setup.range));
     };
-    // All moving points in the present models are harmonic. Fixed support conflicts
+    // Moving points in rotation models are harmonic; shrug translation is affine. Fixed support conflicts
     // are classified by evaluate; the moving hip-extension foot uses the hand point.
     for (const key of ["hip", "shoulder", "elbow", "hand"] as const) roots((pose) => pose[key][2], 0);
-    roots((pose) => pose.hand[2], setup.model === "hip" ? ANKLE_HEIGHT : BAR_RADIUS);
+    roots((pose) => pose.hand[2], ["hip", "hip-abduction", "hip-adduction", "knee-extension", "knee-flexion"].includes(setup.model ?? "pullover") ? ANKLE_HEIGHT : BAR_RADIUS);
     for (let cable = 0; cable < poses[0].cables.length; cable++) {
       for (let coordinate = 0; coordinate < 3; coordinate++) {
         roots((pose) => pose.cables[cable].attachment[coordinate] - pose.cables[cable].outlet[coordinate], 0);
@@ -65,7 +73,7 @@ export function usableIntervals(setup: Setup, profile: Profile): UsableRange {
     const events = [...new Set(candidates)].sort((a, b) => a - b);
     const clear = (angle: number): boolean => {
       const result = evaluate(setup, profile, angle);
-      return result.status !== "contact" && result.status !== "invalid" && result.status !== "singular"
+      return result.geometry.travelValid !== false && result.status !== "contact" && result.status !== "invalid" && result.status !== "singular"
         && result.geometry.cables.every((cable) => cable.length > NUMERIC_EPSILON);
     };
     const eventClear = events.map(clear);

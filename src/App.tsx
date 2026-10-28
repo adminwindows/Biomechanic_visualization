@@ -4,6 +4,7 @@ import {
   presets,
   compatible,
   getDefinition,
+  forceToSetup,
   type Profile,
   type Setup,
 } from "./engine";
@@ -19,6 +20,12 @@ import { AnalysisPanel } from "./AnalysisPanel";
 import { BodyDiagram } from "./BodyDiagram";
 import { OfflineStatus } from "./OfflineStatus";
 import { ExampleComparisons } from "./ExampleComparisons";
+import { saveExerciseDraft, loadExerciseDraft } from "./exerciseDrafts";
+import { DesignExplorer } from "./DesignExplorer";
+import { MachineLab } from "./MachineLab";
+import { CompoundLab } from "./compoundLab";
+import { WorkspaceBackup } from "./WorkspaceBackup";
+import { flushWorkspaceEdits } from "./workspaceBackup";
 import { Scene } from "./Scene";
 import { Curve } from "./Curve";
 import {
@@ -39,6 +46,7 @@ import {
 } from "./state";
 
 type Side = 0 | 1;
+type Workspace = "compare" | "compound" | "machines" | "design";
 function ArrowIcon({ down = false }: { down?: boolean }) {
   return (
     <svg
@@ -91,9 +99,29 @@ export default function App() {
   const [initial] = useState(loadState);
   const [state, setState] = useState<LabState>(() => constrainMotion(initial.state));
   const [notice, setNotice] = useState(initial.error ?? "");
-  const [view, setView] = useState<"side" | "top" | "front">("side");
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState<[number, number]>([0, 0]);
+  const [workspace, setWorkspace] = useState<Workspace>("compare");
+  const [visited, setVisited] = useState<Workspace[]>(["compare"]);
+  const [workbenchRevision, setWorkbenchRevision] = useState({ compound: 0, machine: 0 });
+  const [compoundSelection, setCompoundSelection] = useState<{preset: string; side: Side; nonce: number}>();
+  function activate(next: Workspace) {
+    setPlaying(false);
+    setWorkspace(next);
+    setVisited(previous => previous.includes(next) ? previous : [...previous, next]);
+  }
+  const framing = state.viewFraming ?? { view: "side" as const, zoom: 1, pan: [0, 0] as [number, number] };
+  const { view, zoom, pan } = framing;
+  function setView(next: "side" | "top" | "front") {
+    setState(previous => ({ ...previous, viewFraming: { ...(previous.viewFraming ?? framing), view: next } }));
+  }
+  function setZoom(change: number | ((previous: number) => number)) {
+    setState(previous => {
+      const current = previous.viewFraming ?? framing;
+      return { ...previous, viewFraming: { ...current, zoom: typeof change === "function" ? change(current.zoom) : change } };
+    });
+  }
+  function setPan(next: [number, number]) {
+    setState(previous => ({ ...previous, viewFraming: { ...(previous.viewFraming ?? framing), pan: next.map(value => Math.max(-100, Math.min(100, value))) as [number, number] } }));
+  }
   const [speed, setSpeed] = useState(1);
   const [reducedMotion, setReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -162,7 +190,7 @@ export default function App() {
               ? sharedRange(previous)
               : previous.setups[0].range;
           if (!interval || interval[0] === interval[1]) return previous;
-          let next = previous.angles[0] + direction.current * 1.1 * speed;
+          let next = previous.angles[0] + direction.current * (interval[1] - interval[0]) / 110 * speed;
           if (next <= interval[0]) {
             next = interval[0];
             direction.current = 1;
@@ -179,17 +207,7 @@ export default function App() {
   }, [playing, speed]);
 
   function matchForce(setup: Setup, force: number): Setup | null {
-    if (!Number.isFinite(force) || force < 0 || (setup.slack && force > 1e-9))
-      return null;
-    if (setup.resistance === "dumbbell")
-      return force / 9.81 <= 500 ? { ...setup, loadMass: force / 9.81 } : null;
-    if (setup.loadMode === "mass") {
-      const k = setup.transmissionFactor ?? 1;
-      if (k === 0) return force === 0 ? { ...setup, loadMass: 0 } : null;
-      const mass = force / (9.81 * k);
-      return mass <= 500 ? { ...setup, loadMass: mass } : null;
-    }
-    return force <= 2000 ? { ...setup, tension: force } : null;
+    return forceToSetup(setup, force);
   }
   function equalizeForce(draft: LabState, side: Side, force: number) {
     const matched = matchForce(draft.setups[side], force);
@@ -214,7 +232,7 @@ export default function App() {
         for (const key of [...EQUIPMENT_KEYS, "transmissionFactor" as const]) {
           if (key in patch)
             Object.assign(draft.setups[other], {
-              [key]: draft.setups[side][key],
+              [key]: clone(draft.setups[side][key]),
             });
         }
       }
@@ -229,6 +247,18 @@ export default function App() {
   }
   function setupChange(side: Side, key: keyof Setup, value: unknown) {
     const patch: Partial<Setup> = { [key]: value };
+    const current = state.setups[side];
+    const model = current.model ?? "pullover";
+    const legModel = /^(hip|knee)/.test(model);
+    if (key === "pulleyHeight" && current.outletPositions) {
+      const shift = Number(value) - current.pulleyHeight;
+      patch.outletPositions = current.outletPositions.map(point => [point[0], point[1], Math.max(0, Math.min(10, point[2] + shift))]);
+    }
+    if (key === "loadedSides" && model !== "pullover") patch.cables = value === "bilateral" ? 2 : 1;
+    if (key === "freeWeightKind" && (value === "barbell" || value === "shared") && !legModel) {
+      patch.loadedSides = "bilateral";
+      if (model !== "pullover") patch.cables = 2;
+    }
     if (key === "loadMode" && value === "mass") {
       patch.loadMass = state.setups[side].loadMass ?? 10;
       patch.transmissionFactor = state.setups[side].transmissionFactor ?? 1;
@@ -236,8 +266,12 @@ export default function App() {
     if (key === "resistance" && value === "dumbbell")
       patch.loadMass = state.setups[side].loadMass ?? 5;
     if (key === "posture") {
-      const current = state.setups[side];
-      if (value === "seated") {
+      patch.bodyRoll = value === "side-lying" ? -90 : undefined;
+      if (["supine", "prone", "side-lying"].includes(String(value))) {
+        patch.kind = "bench";
+        patch.tilt = 0;
+        patch.hipHeight = value === "side-lying" ? .7 : .65;
+      } else if (value === "seated") {
         patch.kind = "bench";
         patch.tilt = current.kind === "bench" ? current.tilt : 60;
         patch.hipHeight = 0.46;
@@ -256,21 +290,22 @@ export default function App() {
       }
     }
     if (key === "segmentGravity" && value === true) {
-      if (state.setups[side].model === "hip") {
+      if (legModel) {
         patch.thighMass = state.setups[side].thighMass ?? 0;
         patch.shankMass = state.setups[side].shankMass ?? 0;
+      } else if (model.startsWith("wrist-") || model === "forearm-rotation") {
+        patch.handMass = current.handMass ?? 0;
       } else {
         patch.upperArmMass = state.setups[side].upperArmMass ?? 0;
         patch.forearmMass = state.setups[side].forearmMass ?? 0;
+        patch.handMass = state.setups[side].handMass ?? 0;
       }
     }
     setupPatch(side, patch);
   }
   function chooseSetup(side: Side, next: Setup) {
-    setZoom(1);
-    setPan([0, 0]);
-    setView(getDefinition(next).plane);
     update((draft) => {
+      draft.viewFraming = { view: getDefinition(next).plane, zoom: 1, pan: [0, 0] };
       const force = forceValue(draft.setups[side]);
       draft.setups[side] = clone(next);
       draft.lockEquipment = false;
@@ -281,8 +316,36 @@ export default function App() {
     });
   }
   function choosePreset(side: Side, name: string) {
+    if (name.startsWith("compound:")) {
+      setCompoundSelection({ preset: name.slice("compound:".length), side, nonce: Date.now() });
+      activate("compound");
+      return;
+    }
+    activate("compare");
     const preset = presets.find((p) => p.preset === name);
-    if (preset) chooseSetup(side, preset);
+    if (!preset) return;
+    try {
+      const previous = stateRef.current;
+      saveExerciseDraft(side, previous.setups[side], previous.profiles[side], previous.angles[side]);
+      const restored = loadExerciseDraft(side, name);
+      if (!restored) { chooseSetup(side, preset); return; }
+      update(draft => {
+        const other: Side = side === 0 ? 1 : 0;
+        draft.setups[side] = clone(restored.setup);
+        draft.profiles[side] = clone(restored.profile);
+        draft.angles[side] = restored.angle;
+        if (draft.lockBody) draft.profiles[other] = clone(restored.profile);
+        draft.lockEquipment = false;
+        const force = forceValue(restored.setup);
+        if (draft.lockForce && force !== null && forceValue(draft.setups[other]) !== null) equalizeForce(draft, other, force);
+        else draft.lockForce = false;
+        draft.viewFraming = { view: getDefinition(restored.setup).plane, zoom: 1, pan: [0, 0] };
+        return normalize(draft, side);
+      });
+      setNotice(`Restored your working settings for ${restored.setup.name}${restored.sourceModelVersion ? "; recalculated using the current mechanics model" : ""}. Reset setup preset loads the original example.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not preserve your exercise settings. Export the comparison before switching.");
+    }
   }
   function bodyChange(side: Side, key: keyof Profile, value: number) {
     update((draft) => {
@@ -368,7 +431,7 @@ export default function App() {
           <a href="#model-notes">Model notes</a>
         </nav>
         <span className="version-tag">
-          <i /> 12 scenarios · six families
+          <i /> Interactive mechanics workspace
         </span>
       </header>
       <main id="workspace">
@@ -376,8 +439,7 @@ export default function App() {
           <div>
             <p className="eyebrow">EXPLORE THE MECHANICS</p>
             <h1>
-              A different setup.
-              <br className="mobile-break" /> A different pull.
+              Understand your setup.
             </h1>
             <p className="intro">
               Explore your exercises. Change the setup. Understand the external
@@ -399,20 +461,42 @@ export default function App() {
         </div>
         <OfflineStatus
           beforeReload={() => {
+            flushWorkspaceEdits();
             if (!saveState(stateRef.current))
               throw new Error(
                 "Could not save your current comparison. Export before updating.",
               );
           }}
         />
-        <ExerciseCatalog onPick={choosePreset} />
+        <div className="workspace-utilities">
         <ExampleComparisons onLoad={(next) => {
+          activate("compare");
           setPlaying(false);
-          setZoom(1);
-          setPan([0, 0]);
-          setView(getDefinition(next.setups[0]).plane);
-          update(() => next);
+          update(() => ({ ...next, viewFraming: next.viewFraming ?? { view: getDefinition(next.setups[0]).plane, zoom: 1, pan: [0, 0] } }));
         }} onNotice={setNotice} />
+          <ExerciseCatalog onPick={choosePreset} />
+          <WorkspaceBackup state={state} onNotice={setNotice} onRestored={() => window.location.reload()} />
+        </div>
+        <nav className="workspace-navigation" aria-label="Analysis workspaces">
+          {([
+            ["compare", "Joint & exercise comparison"],
+            ["compound", "Compound movements"],
+            ["machines", "Machines & measured profiles"],
+            ["design", "Find a setup & research"],
+          ] as [Workspace, string][]).map(([id, label]) => <button key={id} aria-pressed={workspace === id} onClick={() => activate(id)}>{label}</button>)}
+        </nav>
+        <div className="shared-profile-bar">
+          <span>Body profiles · A {(profiles[0].height * 100).toFixed(0)} cm · B {(profiles[1].height * 100).toFixed(0)} cm · {state.lockBody ? "linked" : "independent"}</span>
+          <button onClick={() => {
+            activate("compare");
+            requestAnimationFrame(() => {
+              const panel = document.querySelector<HTMLDetailsElement>("#body-profile-a");
+              if (panel) { panel.open = true; panel.scrollIntoView({ block: "start" }); }
+            });
+          }}>Edit body profiles</button>
+        </div>
+        {notice && <div className="notice" role="status">{notice}<button aria-label="Dismiss message" onClick={() => setNotice("")}>×</button></div>}
+        <section hidden={workspace !== "compare"} aria-label="Joint and exercise comparison workspace">
         <div className="study-bar">
           <div className="study-name">
             <span className="study-icon">
@@ -481,6 +565,7 @@ export default function App() {
             </button>
           </div>
         </div>
+        <p className="comparison-context"><strong>{state.comparisonMode === "controlled" ? "Controlled comparison" : "Practical comparison"}</strong> · {state.criterion || "Define the question and which variables you are changing in the analysis below."}</p>
         {!savingEnabled && (
           <div className="notice" role="status">
             The previous saved data could not be restored and has been
@@ -508,14 +593,6 @@ export default function App() {
               }}
             >
               Back up previous data & enable saving
-            </button>
-          </div>
-        )}
-        {notice && (
-          <div className="notice" role="status">
-            {notice}
-            <button aria-label="Dismiss message" onClick={() => setNotice("")}>
-              ×
             </button>
           </div>
         )}
@@ -649,7 +726,7 @@ export default function App() {
                       {result.moment === null
                         ? "—"
                         : `${result.moment > 0 ? "+" : ""}${result.moment.toFixed(1)}`}{" "}
-                      <small>N·m</small>
+                      <small>{modelDefinitions[side].unit}</small>
                     </p>
                   </div>
                   <div className={`status status-${result.status}`}>
@@ -667,7 +744,7 @@ export default function App() {
                       result.status === "assists") &&
                     (setup.model ?? "pullover") !== "pullover"
                       ? `${result.status === "resists" ? "Resists" : "Assists"} movement`
-                      : (labels[result.status] ?? result.status)}
+                      : (result.status === "contact" && !result.contactKind?.includes("backrest") ? "Geometry contact" : labels[result.status] ?? result.status)}
                   </div>
                 </div>
                 <div className="force-components">
@@ -675,13 +752,13 @@ export default function App() {
                     Cable:{" "}
                     {result.cableMoment == null
                       ? "—"
-                      : result.cableMoment.toFixed(1) + " N·m"}
+                      : result.cableMoment.toFixed(1) + " " + modelDefinitions[side].unit}
                   </span>
                   <span>
                     Gravity:{" "}
                     {result.gravityMoment == null
                       ? "—"
-                      : result.gravityMoment.toFixed(1) + " N·m"}
+                      : result.gravityMoment.toFixed(1) + " " + modelDefinitions[side].unit}
                   </span>
                 </div>
                 <p className="panel-footnote">
@@ -694,21 +771,21 @@ export default function App() {
                   </strong>{" "}
                   ·{" "}
                   {result.status === "contact"
-                    ? `${result.contactKind ?? "Cable or bar"} meets the backrest. Direct cable mechanics are unavailable here.`
+                    ? (result.validityReason ?? `${result.contactKind ?? "Represented contact"}. Direct mechanics are unavailable here.`)
                     : (result.validityReason ??
                       (setup.kind === "bench"
                         ? "No contact detected with the represented backrest."
-                        : "No represented backrest. Body clearance and balance are not evaluated."))}
+                        : "Clearance checks use only the enabled body proxies and obstacles. Balance is not evaluated."))}
                 </p>
                 <div className="quick-settings">
-                  <Field
+                  {!setup.outletPositions ? <Field
                     label={`${letter} · Pulley height`}
                     value={setup.pulleyHeight * 100}
-                    min={5}
-                    max={300}
+                    min={(setup.exploration ? .01 : setup.equipmentLimits?.pulleyMin ?? .05) * 100}
+                    max={(setup.exploration ? 5 : setup.equipmentLimits?.pulleyMax ?? 3) * 100}
                     unit="cm"
                     onChange={(v) => setupChange(side, "pulleyHeight", v / 100)}
-                  />
+                  /> : <p className="small-note">Independent outlet positions · edit each coordinate under Equipment geometry & clearance.</p>}
                   <Field
                     label={`${letter} · ${setup.kind === "bench" ? "Backrest above floor" : "Torso from vertical"}`}
                     value={setup.tilt}
@@ -782,8 +859,8 @@ export default function App() {
                   })}>
                   {!options.length && <option value={-1}>No shared clear portion</option>}
                   {options.map((interval, option) => <option key={option} value={option}>
-                    {interval[0].toFixed(2)}–{interval[1].toFixed(2)}°
-                    {state.sync === "progress" ? ` in A; ${motion.options[1][option][0].toFixed(2)}–${motion.options[1][option][1].toFixed(2)}° in B` : ""}
+                    {interval[0].toFixed(2)}–{interval[1].toFixed(2)}{modelDefinitions[side].angleUnit ?? "°"}
+                    {state.sync === "progress" ? ` in A; ${motion.options[1][option][0].toFixed(2)}–${motion.options[1][option][1].toFixed(2)}${modelDefinitions[1].angleUnit ?? "°"} in B` : ""}
                   </option>)}
                 </select>
                 {!options.length && <span role="status" className="small-note">
@@ -860,15 +937,15 @@ export default function App() {
                       : state.setups[i].range[1])
                   }
                   step={0.5}
-                  unit="°"
+                  unit={modelDefinitions[i].angleUnit ?? "°"}
                   onChange={(v) => update((d) => setMotionAngle(d, i as Side, v))}
                 />
                 </fieldset>
               ))}
             </div>
             <div className="angle-readout">
-              <span className="a-text">A {state.angles[0].toFixed(0)}°</span>
-              <span className="b-text">B {state.angles[1].toFixed(0)}°</span>
+              <span className="a-text">A {state.angles[0].toFixed(1)}{modelDefinitions[0].angleUnit ?? "°"}</span>
+              <span className="b-text">B {state.angles[1].toFixed(1)}{modelDefinitions[1].angleUnit ?? "°"}</span>
             </div>
           </div>
           <div className="movement-caption">
@@ -953,14 +1030,14 @@ export default function App() {
                   ? "A model limit changes the story."
                   : Math.abs(difference) < 0.1
                     ? "The external moments match."
-                    : `${Math.abs(difference).toFixed(1)} N·m ${difference > 0 ? "higher" : "lower"} in B.`}
+                    : `${Math.abs(difference).toFixed(1)} ${modelDefinitions[0].unit} ${difference > 0 ? "higher" : "lower"} in B.`}
             </h2>
             <p>
               {!comparable
                 ? "These movements act about different joint coordinates. Read each curve individually; a larger number here is not a ranking of the exercises."
                 : difference === null
                   ? "At least one setup has unknown resistance, contact or an invalid position. Check its status before comparing numerical results."
-                  : `At A ${state.angles[0].toFixed(0)}° and B ${state.angles[1].toFixed(0)}°, the difference is in the external contribution about the modeled joint coordinate.`}
+                  : `At A ${state.angles[0].toFixed(1)}${modelDefinitions[0].angleUnit ?? "°"} and B ${state.angles[1].toFixed(1)}${modelDefinitions[1].angleUnit ?? "°"}, the difference is in the external contribution about the modeled coordinate.`}
             </p>
             <div className="insight-divider" />
             <p className="insight-note">
@@ -1065,10 +1142,10 @@ export default function App() {
                       if (d.lockEquipment) {
                         for (const key of EQUIPMENT_KEYS)
                           Object.assign(d.setups[1], {
-                            [key]: d.setups[0][key],
+                            [key]: clone(d.setups[0][key]),
                           });
                         d.setups[1].transmissionFactor =
-                          d.setups[0].transmissionFactor ?? 1;
+                          d.setups[0].transmissionFactor;
                         if (d.lockForce) {
                           const f = forceValue(d.setups[0]);
                           if (f !== null) equalizeForce(d, 1, f);
@@ -1094,7 +1171,7 @@ export default function App() {
                     if (d.setups[1].resistance !== "dumbbell") {
                       d.setups[1].loadMode = "mass";
                       d.setups[1].transmissionFactor =
-                        d.setups[1].transmissionFactor ?? 1;
+                        d.setups[1].transmissionFactor;
                     }
                     setNotice(
                       "Selected mass copied. Different transmission factors can produce different actual forces.",
@@ -1127,7 +1204,10 @@ export default function App() {
                     change={(key, value) => setupChange(side, key, value)}
                   />
                   <div className="reset-controls">
-                    <button onClick={() => choosePreset(side, setup.preset)}>
+                    <button onClick={() => {
+                      const original = presets.find(preset => preset.preset === setup.preset);
+                      if (original) chooseSetup(side, original);
+                    }}>
                       Reset setup preset
                     </button>
                     <button
@@ -1183,8 +1263,8 @@ export default function App() {
                       <Field
                         label={`${letter} · Pelvis to pulley plane`}
                         value={setup.hipX * 100}
-                        min={-150}
-                        max={250}
+                        min={(setup.exploration ? -10 : setup.equipmentLimits?.distanceMin ?? -1.5) * 100}
+                        max={(setup.exploration ? 10 : setup.equipmentLimits?.distanceMax ?? 2.5) * 100}
                         unit="cm"
                         onChange={(v) => setupChange(side, "hipX", v / 100)}
                         note="Signed X distance: negative is behind the outlet plane. The pelvis anchors the body."
@@ -1338,28 +1418,28 @@ export default function App() {
                         </>
                       )}
                       <Field
-                        label={`${letter} · Minimum elevation`}
+                        label={`${letter} · Minimum position`}
                         value={setup.range[0]}
                         min={getDefinition(setup).minAngle}
                         max={setup.range[1] - 1}
-                        unit="°"
+                        unit={getDefinition(setup).angleUnit ?? "°"}
                         onChange={(v) =>
                           setupChange(side, "range", [v, setup.range[1]])
                         }
                       />
                       <Field
-                        label={`${letter} · Maximum elevation`}
+                        label={`${letter} · Maximum position`}
                         value={setup.range[1]}
                         min={setup.range[0] + 1}
                         max={getDefinition(setup).maxAngle}
-                        unit="°"
+                        unit={getDefinition(setup).angleUnit ?? "°"}
                         onChange={(v) =>
                           setupChange(side, "range", [setup.range[0], v])
                         }
                       />
                     </div>
                   </details>
-                  <details>
+                  <details id={`body-profile-${letter.toLowerCase()}`}>
                     <summary>
                       Body profile{" "}
                       <span className="summary-note">
@@ -1446,6 +1526,14 @@ export default function App() {
             })}
           </div>
         </section>
+        </section>
+        {visited.includes("compound") && <section hidden={workspace !== "compound"} aria-label="Compound movement workspace"><CompoundLab key={workbenchRevision.compound} profiles={profiles} selection={compoundSelection} /></section>}
+        {visited.includes("machines") && <section hidden={workspace !== "machines"} aria-label="Machine workspace"><MachineLab key={workbenchRevision.machine} /></section>}
+        {visited.includes("design") && <section hidden={workspace !== "design"} aria-label="Setup search workspace"><DesignExplorer state={state} onResearchRestore={source => {
+          setWorkbenchRevision(previous => ({ ...previous, [source]: previous[source] + 1 }));
+          setCompoundSelection(undefined);
+          activate(source === "machine" ? "machines" : "compound");
+        }} onApply={next => { update(() => next); activate("compare"); }} /></section>}
         <section className="model-notes" id="model-notes">
           <div>
             <p className="eyebrow">WHAT THIS MODEL TELLS YOU</p>
@@ -1466,8 +1554,9 @@ export default function App() {
             <p>
               Quasi-static movement, prescribed joint paths and rigid segments.
               Tension and travel are assumed available unless the cable is
-              marked slack. Backrest contact is represented; body clearance and
-              whole-body balance are not certified.
+              marked slack or outside supplied travel limits. Backrest, enabled
+              body proxies and supplied obstacles are checked; whole-body balance
+              and clearance beyond those represented volumes are not certified.
             </p>
           </div>
           <div>

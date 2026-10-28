@@ -109,3 +109,30 @@ describe("geometry-limited usable intervals", () => {
     expect(usableIntervals(classic, { ...defaultProfile, upperArm: -1 })).toEqual({ known: false, intervals: [] });
   });
 });
+
+it('partitions a translational shrug at a cable singularity using centimetres', () => {
+  const setup: Setup = { ...classic, model: 'shrug', resistance: 'cable', loadedSides: 'unilateral', cables: 1, tilt: 0, facing: 1, hipHeight: .9, range: [0, 12], forceKnown: false };
+  const crossing = 6.137;
+  const target = geometry(setup, defaultProfile, crossing).cables[0].attachment;
+  setup.outletPositions = [[...target]];
+  expect(geometry(setup, defaultProfile, crossing).cables[0].length).toBeLessThan(1e-9);
+  const result = usableIntervals(setup, defaultProfile);
+  expect(result.known).toBe(true);
+  expect(result.intervals).toHaveLength(2);
+  expect(result.intervals[0][1]).toBeCloseTo(crossing - USABLE_BOUNDARY_INSET, 6);
+  expect(result.intervals[1][0]).toBeCloseTo(crossing + USABLE_BOUNDARY_INSET, 6);
+  expectClear(setup, result.intervals);
+});
+
+
+it('restricts motion around a narrow cable-travel violation, not just its singular centre', () => {
+  const setup: Setup = { ...classic, model: 'shrug', resistance: 'cable', loadedSides: 'unilateral', cables: 1, tilt: 0, facing: 1, hipHeight: .9, range: [6, 6.3], cableTravelMin: .0001 };
+  const target = geometry(setup, defaultProfile, 6.137).cables[0].attachment;
+  setup.outletPositions = [[...target]];
+  const result = usableIntervals(setup, defaultProfile);
+  expect(result.known).toBe(true);
+  expect(result.intervals).toHaveLength(2);
+  expect(result.intervals[0][1]).toBeLessThan(6.127);
+  expect(result.intervals[1][0]).toBeGreaterThan(6.147);
+  for (const interval of result.intervals) for (const value of interval) expect(geometry(setup, defaultProfile, value).travelValid).toBe(true);
+});

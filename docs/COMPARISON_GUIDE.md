@@ -1,6 +1,6 @@
 # Six reproducible biomechanics comparisons
 
-These experiments use the six implemented families to answer concrete setup questions. Their outputs are calculations within declared models, not training-study findings. The mechanics, profile and contact assumptions are documented in [MECHANICS.md](MECHANICS.md); the initial questions and collaboration approach come from the [handoff](../EXERCISE_BIOMECHANICS_HANDOFF.md), especially sections 5, 7 and 17.
+These six worked examples answer concrete setup questions within the broader catalog. See [COVERAGE.md](COVERAGE.md) for every target family and the compound, machine-data and research workflows. Their outputs are calculations within declared models, not training-study findings. The mechanics, profile and contact assumptions are documented in [MECHANICS.md](MECHANICS.md); the initial questions and collaboration approach come from the [handoff](../EXERCISE_BIOMECHANICS_HANDOFF.md), especially sections 5, 7 and 17.
 
 ## Common procedure
 

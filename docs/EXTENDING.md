@@ -1,55 +1,65 @@
-# Adding exercises, variants and machine models
+# Extend the model without changing its meaning silently
 
-This guide describes the current implementation, not a separate plugin API. Read [the mechanics conventions](MECHANICS.md) and the preserved [handoff](../EXERCISE_BIOMECHANICS_HANDOFF.md) first. Keep calculations independent of React, drawing scale and playback speed.
+Start with a question, the quantity needed to answer it and the inputs needed to calculate that quantity. Choose the existing mechanical contract that fits. A familiar exercise name is not enough to justify reusing a path, force convention or result label.
 
-## Choose the right kind of addition
-
-| Addition | Use it when | Main changes |
+| Contract | Appropriate extension | Output obligation |
 |---|---|---|
-| Educational preset / variant | Existing joint coordinates, constraints and force application points describe the movement | Add a stable preset ID and settings in `src/engine.ts`, a teaching question, aliases where appropriate, and a representative fixture |
-| Exercise within a family | The existing mechanics genuinely fit, but the exercise needs distinct defaults, discovery or explanation | Add a preset/catalog entry, precise labels and assumptions; check that every relevant parameter is available |
-| New mechanical family | The joint, movement plane, coupled path, support or force application differs | Extend the engine contract, state validation, controls, rendering and analytical tests together |
-| Known machine | A mechanism or measured resistance profile is available | Add its geometry/transmission or calibrated profile with provenance, units and valid domain |
-| Unknown machine | Mechanism/profile data are absent | Keep a geometry-only illustration with null mechanical results; identify the measurements needed |
+| Isolated coordinate | A declared joint rotation or translation with defined application-point motion | N·m for rotation defined in radians or N for translation defined in metres; compatible coordinate/action metadata and valid geometry |
+| Compound path | Several prescribed joint/segment motions, possibly with supports | J per unit progress; individual axis moments only where the force/support assumptions identify them |
+| Machine input | A specified mechanism or supplied/measured profile | Machine-input moment or force, valid domain, provenance and conditional joint mapping |
 
-Changing a display name does not add missing mechanics. For example, a hip extension must load an ankle about a hip coordinate; it cannot reuse an elbow curl's joint and grip application point.
+## Add a preset or catalog entry
 
-## Add a preset using an existing model
+Use a preset when an existing model already represents the required degrees of freedom, load, support and constraints. The expanded isolated settings live in [exercisePresets.ts](../src/exercisePresets.ts), merged with the base presets in [engine.ts](../src/engine.ts). [catalog.ts](../src/catalog.ts) supplies search/navigation metadata. Compound entries and their declared mechanics live in [compoundEngine.ts](../src/compoundEngine.ts).
 
-1. Copy the nearest appropriate preset's settings into the `presets` array in [engine.ts](../src/engine.ts). Give it a new, stable `preset` ID, a descriptive `name`, the correct `model`, and a justified movement range. Preserve existing IDs because saves and exercise-name mappings refer to them.
-2. State one teaching question: for example, “Does raising this curl outlet from 10 to 30 cm move the peak elbow resistance?” Keep body, actual force and joint range fixed when the question isolates outlet height.
-3. Check the starting pose and the entire selected range. An educational preset may deliberately demonstrate assistance or contact, but its name/explanation should make that purpose clear. Do not label it universally optimal.
-4. Add explicit metadata and searchable aliases in [catalog.ts](../src/catalog.ts): navigation muscle tags, equipment, main joint, starting posture, unilateral/bilateral convention, and model status. Add exercise-list aliases in [training.ts](../src/training.ts). Retain ambiguity when a training label could mean several models. Do not infer actual force from a pasted stack-load number.
-5. Add a representative mechanics fixture and, when introducing new interaction behavior, a browser workflow. Verify discovery in **Exercise catalog**, correct model controls/view, A/B compatibility, save/export and reload.
+Give the entry a stable identifier, an honest name, aliases and a concrete comparison purpose. Confirm that every changed parameter affects the intended geometry or force. A grip annotation can help discovery without claiming that it changes muscle recruitment. A high/low fly trajectory must change its movement plane; moving only an outlet does not create a new hand path.
 
-The catalog combines engine presets with explicit metadata in [catalog.ts](../src/catalog.ts), then renders through [WorkspaceTools.tsx](../src/WorkspaceTools.tsx). A new preset requires that metadata but no separate hand-written card. The six examples in [COMPARISON_GUIDE.md](COMPARISON_GUIDE.md) show how to give a preset a reproducible purpose.
+Declare status and provenance. A theoretical machine, unknown mechanism or prescribed compound path must retain its explanatory status in the catalog, selection controls, exports and training-list matching. Ambiguous imported names need a user resolution; do not map them to an unrelated drawing just to produce a match.
 
-## Add a new family or degree of freedom
+Check discovery, preferred view, controls, a representative valid pose, actual parameter effects, persistence and export/reload. Verify that switching exercises restores the correct panel's draft rather than another exercise's values.
 
-Define the coordinate before writing the drawing: its joint/reference point, positive axis, zero position, reference action and units. In the current engine, coordinates are angles; derivatives are per radian and displayed contribution is `R = −actionDirection × Σ F · dH/dq`, in N·m. A dimensionless progress coordinate cannot be inserted into this contract and still be labeled N·m. A coupled movement needs its own justified coordinate/output definition.
+## Add an isolated coordinate
 
-The main integration points are:
+Define the coordinate before drawing it: origin/axis or translational direction, zero, units, reference action, positive direction and load convention. `getDefinition` supplies the coordinate unit and conversion to SI. Its `metricKey` must distinguish incompatible actions or unilateral/bilateral meanings even when their units match.
 
-- **Engine:** extend `Model`, `Setup`/`Profile` where needed, and `definitions` in [engine.ts](../src/engine.ts). Implement the actual pose in `geometry`, including each load's application point and derivative. Define fixed supports, geometric closure, singular states and unknown inputs. Add explicit loads to `Geometry.loads`; do not hide inferred masses in rendering code.
-- **Comparison meaning:** choose an honest `metricKey` and update `compatible` when necessary. Matching units alone does not make shoulder, elbow and hip contributions comparable. Bilateral totals and unilateral quantities also need an explicit convention.
-- **Validation and saved data:** update the allowlists/bounds in `validateSetup` and `validateProfile` in [state.ts](../src/state.ts). For new body dimensions, update provenance/locks, `PROFILE_KEYS`, defaults, measurement definitions and estimate rules. Preserve measured fields. Check named snapshots and round-trips in [library.ts](../src/library.ts); do not rely on transient preset references to reproduce a save.
-- **Interface and drawing:** expose meaningful controls in [WorkspaceTools.tsx](../src/WorkspaceTools.tsx) / [App.tsx](../src/App.tsx). Render `Geometry.limbs`, loads and landmarks in [Scene.tsx](../src/Scene.tsx), with the model's preferred view. Update [BodyDiagram.tsx](../src/BodyDiagram.tsx) for new measurement landmarks. Dragging and numeric entry must modify the same physical inputs.
-- **Curves and analysis:** use the same `evaluate` results in [Curve.tsx](../src/Curve.tsx) and [analysis.ts](../src/analysis.ts). Preserve null gaps for unknown/invalid mechanics. Keep contact and mechanical reversal separate; inspect region integration, difference tables and exported explanations for the new model.
+The result follows `R = −actionDirection × Σ F · dH/dq`. Here q is radians for a rotation or metres for translation. Public controls can use degrees or centimetres, but derivatives, integration and power must use the declared conversion. Do not use dimensionless progress as a derivative and label the result N·m.
 
-The current analytic contact candidates require fixed outlets/obstacles and harmonic attachment paths `C + A cos(q) + B sin(q)`. A moving pulley or general coupled path must supply suitable continuous event handling; it cannot inherit that guarantee merely because it returns similar points.
+Integration points:
 
-Minimum validation should include an independent analytical pose, force scaling, finite-difference virtual work where applicable, axis/sign conventions, rigid segment lengths, support/closure validity, singular/unknown/zero states and agreement between live evaluation and the curve. Add gravity additivity and mirrored-load cases when the model uses them. Tests should establish the declared model's behavior, not physiological validity.
+- Add true geometry/application-point derivatives in [engine.ts](../src/engine.ts) or the relevant module, such as [isolatedJoints.ts](../src/isolatedJoints.ts). Declare supports, grip closure, floor/travel limits and unknown inputs. Rendering consumes that geometry rather than maintaining a second pose model.
+- Represent each load explicitly, including per-hand versus total shared mass. Keep actual force, selected mass, transmission, slack and unknown states consistent with the shared force helpers and UI locks.
+- Extend the schema and bounds in [state.ts](../src/state.ts). New body fields need measurement definitions, provenance, locks and explicit estimate-regeneration behavior. Validate snapshots, not just preset references.
+- Update controls, diagrams, [Scene](../src/Scene.tsx), [Curve](../src/Curve.tsx), [analysis](../src/analysis.ts), differences and reports. All must display the correct coordinate/output unit and preserve unavailable results.
+- Supply event handling suited to the trajectory. Current harmonic rotational and affine translation candidates cover their declared fixed geometry. A new path or obstacle cannot inherit continuous-detection claims merely by returning similar-looking points. Update usable-range constraints and search validity as well as plotted curves.
 
-## Add a real machine without inventing its resistance
+Useful independent checks include an analytical pose, force scaling, finite-difference virtual work, coordinate reversal, gravity additivity, load-count conventions, rigid segment lengths and support/closure boundaries. Verify zero, unknown, singular, contact and out-of-travel states separately.
 
-Record the machine's model/version and the source of dimensions or measurements. Specify whether a supplied profile is angle–force, angle–moment at the machine pivot, or moment about a human joint. Those quantities are not interchangeable. Include units, interpolation, valid range, transmission convention, measurement uncertainty and lifting/lowering differences when known.
+## Add a compound path
 
-For a mechanism model, represent the pivot/linkage/cam and actual application/support points. For a calibrated profile, use its supported domain and return unknown outside it; do not silently extrapolate. A machine-pivot moment becomes a human-joint contribution only through a modeled transmission/support relationship. Add reference fixtures from the supplied data and a comparison with stated assumptions.
+Declare progress, start/end geometry, fixed/moving supports, loads, assistance and segment masses. The path derivative produces `−Σ F · dH/dp` in J per unit progress. Preserve segment lengths and verify neighbouring poses before differentiating.
 
-Until those inputs exist, follow `machine-unknown`: show the mechanism/support illustration, explain what is missing, and leave force and moment null. A user-edited theoretical curve needs its own hypothetical provenance and must not become a claim about a commercial machine.
+A stationary support can do zero path work while its unknown reaction still prevents a unique individual-joint result. A moving support can contribute unknown work. Do not derive complete squat, pull-up or press joint moments from the external implement alone. Selected open-arm components need explicit axes and a defensible distal load set; they are not muscle forces or joint contact forces.
 
-## Version, verify and deliver
+Add the entry to the compound catalog, controls and explanation. Keep scene bounds shared while labeling each quantitative chart's scale. Test path geometry, endpoint/intermediate validity, load directions, mass counting, stationary supports, singular derivatives and any claimed axis moments. A commercial-machine path with missing transmission remains an illustration.
 
-Change `MODEL_VERSION` when a correction or new convention changes the meaning/results of saved configurations. Add an explicit migration only when its meaning is known. The current [state](../src/state.ts) and [library](../src/library.ts) paths retain backups of old-model snapshots and surface recalculation; extend that behavior rather than silently replacing historical results.
+## Add a machine or measured profile
 
-Run the checks relevant to the addition: `npm test`, `npm run build`, interactive workflows with `npm run test:e2e`, and `npm run test:pwa` when delivered assets or offline behavior change. Update [MECHANICS.md](MECHANICS.md), the [acceptance map](ACCEPTANCE.md), and a comparison brief with assumptions, sources and a conditional conclusion. Follow [AGENTS.md](../AGENTS.md): publish and verify the same hosted application, keep the review branch current, and explain the technical result, biomechanical meaning and limits. A passing test suite is not evidence of muscle-growth superiority.
+The [machine engine](../src/machine.ts) already separates lever, cable/belt, effective cam arm, four-bar linkage and data-curve definitions. Reuse the appropriate mechanism only when its parameters are known. A cam-arm curve is not a physical cam reconstruction; a generic linkage is not every machine with several links.
+
+Record coordinate/zero definition, reference action, domain, machine/source identity, load setting, measurement location/protocol and uncertainty. Keep lifting and lowering branches separate. Return unavailable outside the supported domain; do not silently extrapolate or synthesize the other branch.
+
+Force data remains force unless a signed moment arm is supplied. A machine pivot is not automatically a human joint. A constant-ratio/aligned-axis conversion needs its explicit assumption and virtual-work mapping. More general human-machine coupling requires its own contact/transmission model.
+
+Validate profiles, workspace comparisons and libraries together. Supply reference fixtures from real data when claiming measured agreement; label invented teaching values theoretical. Check coordinate-equivalence confirmation and incompatible-output display in machine A/B.
+
+## Preserve and deliver the result
+
+Update the relevant model version when meaning or results change. Migrate only known schemas/conventions; preserve originals and disclose recalculation. Comparison snapshots, per-exercise drafts, machine/compound libraries and notebook source versions all need compatible validation. [workspaceBackup.ts](../src/workspaceBackup.ts) explicitly allowlists portable stores; adding a new saved workspace requires a validator and restore/recovery behavior, not arbitrary storage-key import.
+
+Check current edits and saved items separately. Research notes use an explicit save action. Typed source attachments must pass the original compound/machine validator, retain model/data provenance, and restore only their named workspace after a recovery copy. Preserve the mandatory joint-context snapshot for older notebooks. A source capture flushes current workbench edits first; it bypasses only the note form’s own draft guard, never unapplied machine data or storage failures.
+
+The shared `biomechanics:flush-workspaces` event must either persist the latest valid work or append a clear error to its `detail.errors`. Unsaved note text and unapplied curve text block workspace export/restore and managed app-update reload until saved/applied or discarded. Backup guidance must not imply that unfinished text is silently included, or that an ordinary browser reload has the same guard. Include newly required production assets/data in offline preparation and test update behavior when that path changes.
+
+Use checks appropriate to the changed contract, followed by TypeScript/build and relevant browser/offline workflows. The [verification record](VERIFICATION.md) should state observed results rather than treating test definitions as evidence. Add a worked question with hypotheses, controlled variables, metrics, assumptions, checks, conditional interpretation, sources and next measurement. Explain why a new model improves a decision; a larger name count is not the scientific objective.
+
+Follow [AGENTS.md](../AGENTS.md) for delivery: working hosted link, inspectable source, actual checks and a clear explanation of technical and biomechanical meaning. Update [COVERAGE.md](COVERAGE.md), [MECHANICS.md](MECHANICS.md) and the [acceptance map](ACCEPTANCE.md) when their contracts change. Keep the original handoff and historical changelog intact.

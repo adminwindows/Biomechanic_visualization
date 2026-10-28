@@ -1,4 +1,7 @@
 /** Pure quasi-static exercise models. Distances: m; forces: N; public angles: degrees. */
+import { buildIsolatedJoint } from './isolatedJoints';
+import { extendedPresets } from './exercisePresets';
+import { collisionAt, collisionBands, type CollisionBands } from './collisions';
 export type Vec3 = [number, number, number];
 export type Profile = {
   height: number;
@@ -13,7 +16,7 @@ export type Profile = {
   pelvisWidth?: number;
   headNeck?: number;
 };
-export type Model = 'pullover' | 'curl' | 'extension' | 'raise' | 'fly' | 'hip' | 'machine';
+export type Model = 'pullover' | 'curl' | 'extension' | 'raise' | 'fly' | 'hip' | 'machine' | 'reverse-fly' | 'hip-abduction' | 'hip-adduction' | 'knee-extension' | 'knee-flexion' | 'wrist-flexion' | 'wrist-extension' | 'forearm-rotation' | 'shrug';
 export type Setup = {
   preset: string;
   name: string;
@@ -39,7 +42,7 @@ export type Setup = {
   loadMass?: number;
   upperArmAngle?: number;
   planeOffset?: number;
-  posture?: 'standing' | 'kneeling' | 'seated';
+  posture?: 'standing' | 'kneeling' | 'seated' | 'supine' | 'prone' | 'side-lying';
   gripWidth?: number;
   barLength?: number;
   slack?: boolean;
@@ -51,6 +54,29 @@ export type Setup = {
   forearmMass?: number;
   thighMass?: number;
   shankMass?: number;
+  handMass?: number;
+  hipY?: number;
+  movementPlane?: number;
+  bodyRoll?: number;
+  jointPlacement?: number;
+  loadedSides?: 'unilateral'|'bilateral';
+  gripStyle?: 'supinated'|'neutral'|'pronated'|'ez';
+  freeWeightKind?: 'dumbbell'|'barbell'|'shared';
+  rotationLever?: number;
+  rotationDirection?: 'pronation'|'supination';
+  forearmRotation?: number;
+  outletPositions?: Vec3[];
+  cableRadius?: number;
+  barRadius?: number;
+  cableTravelMin?: number;
+  cableTravelMax?: number;
+  stackArrangement?: 'independent'|'shared';
+  bodyCollision?: boolean;
+  bodyRadius?: number;
+  collisionAttachmentClearance?: number;
+  obstacles?: Array<{id:string;name:string;type:'box';center:Vec3;size:Vec3;allowBodyContact?:boolean}|{id:string;name:string;type:'capsule';a:Vec3;b:Vec3;radius:number;allowBodyContact?:boolean}>;
+  equipmentLimits?: {pulleyMin:number;pulleyMax:number;distanceMin:number;distanceMax:number};
+  exploration?: boolean;
 };
 export type Status =
   | "resists"
@@ -102,10 +128,12 @@ export type Geometry = {
   gravityKnown?: boolean;
   hasBar?: boolean;
   supportPoints?: Vec3[];
+  backrestAxes?: [Vec3,Vec3,Vec3];
+  travelValid?: boolean;
 };
 export type Evaluation = {
   geometry: Geometry;
-  /** Total generalized cable moment for the symmetric movement, not per shoulder. */
+  /** Signed total external generalized contribution; N·m for rotations, N for translation. */
   moment: number | null;
   status: Status;
   contact: Vec3 | null;
@@ -124,7 +152,7 @@ export type CurvePoint = {
   status: Status;
 };
 
-export const MODEL_VERSION = "biomechanics-2";
+export const MODEL_VERSION = "biomechanics-3";
 export const RAD = Math.PI / 180;
 export const NUMERIC_EPSILON = 1e-9;
 export const CABLE_RADIUS = 0.003;
@@ -134,7 +162,8 @@ export const ANKLE_HEIGHT = 0.06;
 export type ExerciseDefinition = {
   id:Model; family:string; label:string; angleLabel:string; action:string;
   metricKey:string; plane:'side'|'front'|'top'; minAngle:number;maxAngle:number;
-  unit:'N·m';forceConvention:string;actionDirection:1|-1;
+  unit:'N·m'|'N';forceConvention:string;actionDirection:1|-1;
+  angleUnit?:'°'|'cm';coordinateScale?:number;
 };
 export const definitions: ExerciseDefinition[] = [
   {id:'pullover',family:'Pullover',label:'Cable pullover',angleLabel:'Upper-arm elevation from torso',action:'Bring the arms toward the torso',metricKey:'symmetric-pullover-resistance',plane:'side',minAngle:0,maxAngle:200,unit:'N·m',forceConvention:'Actual force per attachment; total symmetric contribution',actionDirection:-1},
@@ -144,11 +173,38 @@ export const definitions: ExerciseDefinition[] = [
   {id:'fly',family:'Shoulder fly',label:'Cable fly',angleLabel:'Horizontal adduction from lateral',action:'Bring the hands forward and together',metricKey:'bilateral-shoulder-adduction-resistance',plane:'top',minAngle:0,maxAngle:120,unit:'N·m',forceConvention:'Independent handles; sum of two mirrored shoulder contributions',actionDirection:1},
   {id:'hip',family:'Hip movement',label:'Cable hip extension',angleLabel:'Hip extension from neutral',action:'Move the thigh backward',metricKey:'unilateral-hip-extension-resistance',plane:'side',minAngle:-30,maxAngle:90,unit:'N·m',forceConvention:'One ankle attachment; hip contribution',actionDirection:1},
   {id:'machine',family:'Machine illustration',label:'Unknown pullover machine',angleLabel:'Upper-arm elevation from torso',action:'Bring the arms toward the torso',metricKey:'unknown-machine',plane:'side',minAngle:0,maxAngle:200,unit:'N·m',forceConvention:'Unknown mechanism; no quantitative resistance',actionDirection:-1},
+  {id:'reverse-fly',family:'Shoulder reverse fly',label:'Reverse fly',angleLabel:'Horizontal adduction from lateral',action:'Open the arms away from the front',metricKey:'shoulder-horizontal-abduction-resistance',plane:'top',minAngle:0,maxAngle:120,unit:'N·m',forceConvention:'Independent handles; total contribution of the loaded arms',actionDirection:-1},
+  {id:'hip-abduction',family:'Hip abduction',label:'Hip abduction',angleLabel:'Hip abduction from neutral',action:'Move the leg laterally away from the pelvis',metricKey:'hip-abduction-resistance',plane:'front',minAngle:-30,maxAngle:70,unit:'N·m',forceConvention:'One ankle attachment',actionDirection:1},
+  {id:'hip-adduction',family:'Hip adduction',label:'Hip adduction',angleLabel:'Hip abduction from neutral',action:'Bring the leg toward the midline',metricKey:'hip-adduction-resistance',plane:'front',minAngle:-30,maxAngle:70,unit:'N·m',forceConvention:'One ankle attachment',actionDirection:-1},
+  {id:'knee-extension',family:'Knee extension',label:'Knee extension',angleLabel:'Knee flexion',action:'Extend the knee',metricKey:'knee-extension-resistance',plane:'side',minAngle:0,maxAngle:150,unit:'N·m',forceConvention:'One ankle attachment; prescribed thigh support',actionDirection:-1},
+  {id:'knee-flexion',family:'Knee flexion',label:'Leg curl',angleLabel:'Knee flexion',action:'Flex the knee',metricKey:'knee-flexion-resistance',plane:'side',minAngle:0,maxAngle:150,unit:'N·m',forceConvention:'One ankle attachment; prescribed thigh support',actionDirection:1},
+  {id:'wrist-flexion',family:'Wrist flexion',label:'Wrist curl',angleLabel:'Wrist flexion',action:'Flex the wrist',metricKey:'wrist-flexion-resistance',plane:'side',minAngle:-70,maxAngle:90,unit:'N·m',forceConvention:'One grip load; forearm fixed',actionDirection:1},
+  {id:'wrist-extension',family:'Wrist extension',label:'Wrist extension',angleLabel:'Wrist flexion',action:'Extend the wrist',metricKey:'wrist-extension-resistance',plane:'side',minAngle:-70,maxAngle:90,unit:'N·m',forceConvention:'One grip load; forearm fixed',actionDirection:-1},
+  {id:'forearm-rotation',family:'Forearm rotation',label:'Forearm rotation with offset handle',angleLabel:'Handle rotation about forearm',action:'Rotate in the positive defined forearm direction',metricKey:'forearm-positive-rotation-resistance',plane:'front',minAngle:-180,maxAngle:180,unit:'N·m',forceConvention:'Explicit offset lever; forearm fixed',actionDirection:1},
+  {id:'shrug',family:'Shoulder-girdle elevation',label:'Shrug',angleLabel:'Shoulder-girdle elevation',action:'Elevate the shoulder girdle',metricKey:'shoulder-girdle-elevation-force',plane:'front',minAngle:0,maxAngle:12,unit:'N',angleUnit:'cm',coordinateScale:.01,forceConvention:'Vertical translational contribution; prescribed shoulder-girdle path',actionDirection:1},
 ];
 export function getDefinition(setup:Setup):ExerciseDefinition {
   const definition = definitions.find(item => item.id === (setup.model ?? 'pullover'));
   if (!definition) throw new RangeError('Unsupported exercise model.');
-  return definition;
+  const result={angleUnit:'°' as const,coordinateScale:RAD,...definition};
+  const bilateral=setup.loadedSides==='bilateral'||(setup.loadedSides!=='unilateral'&&(['pullover','fly','reverse-fly','shrug'].includes(setup.model??'pullover')||setup.cables===2));
+  if(['raise','fly','reverse-fly','curl','extension','wrist-flexion','wrist-extension'].includes(setup.model??'')) {
+    result.metricKey+=bilateral?':bilateral':':unilateral';
+    result.forceConvention=(setup.freeWeightKind==='barbell'||setup.freeWeightKind==='shared'?'Total shared implement mass':bilateral?'Force or mass per loaded hand; total bilateral contribution':'One loaded hand')+'; no muscle-force inference';
+  }
+  if((setup.model??'pullover')==='pullover'&&setup.resistance==='dumbbell')result.forceConvention=setup.freeWeightKind==='barbell'||setup.freeWeightKind==='shared'?'Total shared implement mass, counted once; total coupled shoulder contribution':'Mass per hand; total coupled shoulder contribution';
+  if(setup.model==='raise') {
+    result.metricKey+=`:plane-${setup.movementPlane??0}`;
+    result.plane=Math.abs(setup.movementPlane??0)>60?'side':'front';
+  }
+  if(setup.model==='fly'||setup.model==='reverse-fly') {
+    result.metricKey+=`:plane-${setup.movementPlane??0}`;
+    if(setup.movementPlane)result.angleLabel='Adduction in the selected tilted plane';
+  }
+  if(setup.model==='forearm-rotation'&&setup.rotationDirection==='supination') {
+    result.actionDirection=-1;result.action='Rotate in the negative defined forearm direction';result.metricKey='forearm-negative-rotation-resistance';
+  }
+  return result;
 }
 export function compatible(a:Setup,b:Setup):boolean {
   return getDefinition(a).metricKey === getDefinition(b).metricKey
@@ -162,6 +218,29 @@ export function getTension(setup:Setup):number|null {
   return setup.loadMode === 'mass'
     ? setup.loadMass === undefined || setup.transmissionFactor === undefined ? null : attachmentForce(setup.loadMass,setup.transmissionFactor)
     : setup.tension;
+}
+export function getOutletPosition(setup:Setup,index:number,side:number):Vec3 {
+  return setup.outletPositions?.[index]??[setup.planeOffset??0,side*setup.outletSpacing/2,setup.pulleyHeight];
+}
+export function loadedCount(setup:Setup):number {
+  if(setup.model==='hip'||setup.model?.startsWith('hip-')||setup.model?.startsWith('knee-'))return 1;
+  if(setup.loadedSides)return setup.loadedSides==='bilateral'?2:1;
+  return ['pullover','fly','reverse-fly','shrug'].includes(setup.model??'pullover')||setup.cables===2?2:1;
+}
+/** Actual scalar force per cable attachment or loaded hand; bar mass is TOTAL. */
+export function actualForce(setup:Setup):number|null {
+  if(setup.model==='machine'||setup.resistance==='unknown')return null;
+  if(setup.resistance==='dumbbell')return setup.loadMass===undefined?null:setup.loadMass*9.81/(setup.freeWeightKind==='barbell'||setup.freeWeightKind==='shared'?loadedCount(setup):1);
+  return getTension(setup);
+}
+export function forceToSetup(setup:Setup,force:number):Setup|null {
+  if(!Number.isFinite(force)||force<0||setup.model==='machine'||setup.resistance==='unknown')return null;
+  if(setup.resistance==='dumbbell')return {...setup,loadMass:force*(setup.freeWeightKind==='barbell'||setup.freeWeightKind==='shared'?loadedCount(setup):1)/9.81};
+  if(setup.loadMode==='mass') {
+    if(setup.transmissionFactor===undefined||setup.transmissionFactor===0)return force===0?{...setup,loadMass:0}:null;
+    return {...setup,loadMass:force/(9.81*setup.transmissionFactor),forceKnown:true,slack:false};
+  }
+  return {...setup,tension:force,forceKnown:true,slack:false};
 }
 
 export const add = (a: Vec3, b: Vec3): Vec3 => [
@@ -250,7 +329,9 @@ function validate(setup: Setup, profile: Profile, angle: number): void {
     setup.backWidth,
     setup.backThickness,
     ...setup.range,
-    ...[setup.loadMass,setup.upperArmAngle,setup.planeOffset,setup.gripWidth,setup.barLength,setup.transmissionFactor,setup.upperArmMass,setup.forearmMass,setup.thighMass,setup.shankMass].filter((v):v is number=>v!==undefined),
+    ...[setup.loadMass,setup.upperArmAngle,setup.planeOffset,setup.gripWidth,setup.barLength,setup.transmissionFactor,setup.upperArmMass,setup.forearmMass,setup.thighMass,setup.shankMass,setup.handMass,setup.hipY,setup.movementPlane,setup.bodyRoll,setup.jointPlacement,setup.rotationLever,setup.forearmRotation,setup.bodyRadius,setup.collisionAttachmentClearance,setup.cableRadius,setup.barRadius,setup.cableTravelMin,setup.cableTravelMax].filter((v):v is number=>v!==undefined),
+    ...(setup.outletPositions??[]).flat(),
+    ...Object.values(setup.equipmentLimits??{}),
   ];
   if (
     !values.every(Number.isFinite) ||
@@ -273,9 +354,16 @@ function validate(setup: Setup, profile: Profile, angle: number): void {
     || (setup.forearmMass !== undefined && setup.forearmMass < 0)
     || (setup.thighMass !== undefined && setup.thighMass < 0)
     || (setup.shankMass !== undefined && setup.shankMass < 0)
+    || (setup.handMass !== undefined && setup.handMass < 0)
+    || (setup.cableRadius !== undefined && setup.cableRadius <= 0)
+    || (setup.barRadius !== undefined && setup.barRadius <= 0)
+    || (setup.rotationLever !== undefined && setup.rotationLever <= 0)
+    || (setup.cableTravelMin !== undefined && setup.cableTravelMin < 0)
+    || (setup.cableTravelMax !== undefined && setup.cableTravelMax < (setup.cableTravelMin??0))
+    || (setup.outletPositions !== undefined && (setup.outletPositions.length<1||setup.outletPositions.length>2||setup.outletPositions.some(p=>p.length!==3)))
   ) {
     throw new RangeError(
-      "Invalid pullover configuration. All lengths must be positive and numeric inputs finite.",
+      "Invalid exercise configuration. All lengths must be positive and numeric inputs finite.",
     );
   }
 }
@@ -291,9 +379,9 @@ function pulloverGeometry(
   const beta = (setup.kind === "bench" ? setup.tilt - 90 : setup.tilt) * RAD;
   const d = setup.facing;
   const torsoDirection: Vec3 = [d * Math.sin(beta), 0, Math.cos(beta)];
-  const normal: Vec3 = [d * Math.cos(beta), 0, -Math.sin(beta)];
-  const axis: Vec3 = [0, -d, 0];
-  const hip: Vec3 = [setup.hipX, 0, setup.hipHeight];
+  const normal: Vec3 = scale([d * Math.cos(beta), 0, -Math.sin(beta)],setup.posture==='prone'?-1:1);
+  const axis: Vec3 = cross(normal,torsoDirection);
+  const hip: Vec3 = [setup.hipX, setup.hipY??0, setup.hipHeight];
   const shoulder = add(hip, scale(torsoDirection, profile.torso));
   const direction = (angle: number): Vec3 =>
     add(
@@ -360,14 +448,10 @@ function pulloverGeometry(
   const cables = sides.map((side) => {
     const attachment: Vec3 = [
       hand[0],
-      (side * setup.attachmentSpacing) / 2,
+      hand[1]+(side * setup.attachmentSpacing) / 2,
       hand[2],
     ];
-    const outlet: Vec3 = [
-      setup.planeOffset??0,
-      (side * setup.outletSpacing) / 2,
-      setup.pulleyHeight,
-    ];
+    const outlet: Vec3 = getOutletPosition(setup,sides.indexOf(side),side);
     return {
       attachment,
       outlet,
@@ -416,8 +500,13 @@ function addLegs(g:Geometry,setup:Setup,profile:Profile,q:number):void {
   const width=profile.pelvisWidth??0.30, posture=setup.posture??(setup.kind==='bench'?'seated':'standing');
   g.supportValid=true; g.supportPoints=[];
   for(const side of [-1,1]) {
-    const hip=add(g.hip,[0,side*width/2,0]);
+    const hip=add(g.hip,setup.posture==='side-lying'?scale(cross(g.torsoDirection,g.normal),side*width/2):[0,side*width/2,0]);
     let knee:Vec3|null=null,ankle:Vec3;
+    if(['supine','prone','side-lying'].includes(posture)&&!(setup.model==='hip'&&side===1)) {
+      knee=add(hip,scale(g.torsoDirection,-thigh));ankle=add(knee,scale(g.torsoDirection,-shank));
+      g.limbs!.push({from:hip,to:knee,kind:'thigh'},{from:knee,to:ankle,kind:'shank'},{from:ankle,to:add(ankle,scale(g.normal,foot)),kind:'foot'});
+      continue;
+    }
     if(setup.model==='hip' && side===1) {
       const direction=add(scale(g.torsoDirection,-Math.cos(q)),scale(g.normal,-Math.sin(q)));
       const derivative=add(scale(g.torsoDirection,Math.sin(q)),scale(g.normal,-Math.cos(q)));
@@ -431,7 +520,7 @@ function addLegs(g:Geometry,setup:Setup,profile:Profile,q:number):void {
       ankle=knee?add(knee,[-setup.facing*shank,0,0]):add(hip,[0,0,-thigh-shank]);
       if(knee) g.supportPoints.push(knee);
     } else {
-      const forward=posture==='seated'?0.48:setup.model==='hip'?0:0.06;
+      const forward=posture==='seated'?0.48:(setup.model==='hip'||setup.model?.startsWith('hip-')||setup.model?.startsWith('knee-'))?0:0.06;
       ankle=[hip[0]+setup.facing*forward,hip[1],ANKLE_HEIGHT];
       knee=solveKnee(hip,ankle,thigh,shank,setup.facing);
       if(knee)g.supportPoints.push(ankle);
@@ -455,8 +544,8 @@ export function geometry(setup:Setup,profile:Profile,qDegrees:number):Geometry {
   g.angleLabel=definition.angleLabel;g.jointOrigin=g.shoulder;g.jointAxis=g.axis;
   if(!g.hasBar)g.gripCompatible=true;
   // A lateral raise leans in its frontal motion plane, unlike sagittal torso lean.
-  if(model==='raise') {
-    const beta=setup.tilt*RAD,d=setup.facing;
+  if((model==='raise'&&setup.kind!=='bench')||setup.posture==='side-lying') {
+    const beta=(setup.bodyRoll??(setup.posture==='side-lying'?-90:setup.tilt))*RAD,d=setup.facing;
     g.torsoDirection=[0,d*Math.sin(beta),Math.cos(beta)];g.normal=[d,0,0];
     g.shoulder=add(g.hip,scale(g.torsoDirection,profile.torso));
     const lateral:Vec3=[0,d*Math.cos(beta),-Math.sin(beta)];
@@ -464,15 +553,19 @@ export function geometry(setup:Setup,profile:Profile,qDegrees:number):Geometry {
     g.head=add(g.shoulder,scale(g.torsoDirection,(profile.headNeck??0.24)*0.65));
   }
   // Rebuild equipment from the same orthonormal basis after any family-specific torso rotation.
-  g.backBase=sub(g.hip,scale(g.normal,setup.backThickness/2+0.08));
+  const lateralSupport=cross(g.torsoDirection,g.normal);
+  const equipmentNormal:Vec3=setup.posture==='side-lying'?scale(lateralSupport,lateralSupport[2]<0?-1:1):setup.posture==='prone'?scale(g.normal,-1):g.normal;
+  g.backrestAxes=[g.torsoDirection,cross(g.torsoDirection,equipmentNormal),equipmentNormal];
+  g.backBase=sub(g.hip,scale(equipmentNormal,setup.backThickness/2+0.08+(setup.posture==='side-lying'?profile.shoulderWidth/2:0)));
   g.backTop=add(g.backBase,scale(g.torsoDirection,setup.backLength));
   g.backCorners=[];
   for(const along of [0,setup.backLength])for(const [side,depth] of [[-1,-1],[1,-1],[1,1],[-1,1]])
-    g.backCorners.push(add(add(add(g.backBase,scale(g.torsoDirection,along)),scale(cross(g.torsoDirection,g.normal),side*setup.backWidth/2)),scale(g.normal,depth*setup.backThickness/2)));
+    g.backCorners.push(add(add(add(g.backBase,scale(g.torsoDirection,along)),scale(g.backrestAxes[1],side*setup.backWidth/2)),scale(equipmentNormal,depth*setup.backThickness/2)));
   g.limbs=[{from:g.hip,to:g.shoulder,kind:'body'},{from:g.shoulders[0],to:g.shoulders[1],kind:'body'}];
+  const bodyLateral=scale(sub(g.shoulders[1],g.shoulders[0]),1/profile.shoulderWidth);
   const sagittal=(angle:number):Vec3=>add(scale(g.normal,Math.sin(angle)),scale(g.torsoDirection,-Math.cos(angle)));
   const sagittalDerivative=(angle:number):Vec3=>add(scale(g.normal,Math.cos(angle)),scale(g.torsoDirection,Math.sin(angle)));
-  const movingSides=model==='pullover'||model==='machine'||model==='fly'||((model==='curl'||model==='extension')&&setup.cables===2)?[-1,1]:[1];
+  const movingSides=setup.loadedSides==='unilateral'?[1]:setup.loadedSides==='bilateral'||model==='pullover'||model==='machine'||model==='fly'||model==='reverse-fly'||((model==='curl'||model==='extension')&&setup.cables===2)?[-1,1]:[1];
   const handDerivatives:Vec3[]=[];
   const armAxes:Vec3[]=[];
   if(model!=='pullover'&&model!=='machine') {
@@ -481,21 +574,30 @@ export function geometry(setup:Setup,profile:Profile,qDegrees:number):Geometry {
       let upper:Vec3,distal:Vec3,upperDerivative:Vec3,distalDerivative:Vec3,axis:Vec3;
       if(model==='curl'||model==='extension') {
         const upperAngle=(setup.upperArmAngle??(model==='extension'?0:0))*RAD;
-        upper=sagittal(upperAngle);distal=sagittal(upperAngle+q);
-        upperDerivative=[0,0,0];distalDerivative=sagittalDerivative(upperAngle+q);axis=[0,-setup.facing,0];
+        const plane=(setup.movementPlane??0)*RAD;
+        const forward=add(scale(g.normal,Math.cos(plane)),scale(bodyLateral,side*Math.sin(plane)));
+        const u=(angle:number)=>add(scale(forward,Math.sin(angle)),scale(g.torsoDirection,-Math.cos(angle)));
+        const du=(angle:number)=>add(scale(forward,Math.cos(angle)),scale(g.torsoDirection,Math.sin(angle)));
+        upper=u(upperAngle);distal=u(upperAngle+q);
+        upperDerivative=[0,0,0];distalDerivative=du(upperAngle+q);axis=cross(forward,g.torsoDirection);
       } else if(model==='raise') {
-        const beta=setup.tilt*RAD,lateral:Vec3=[0,setup.facing*Math.cos(beta),-Math.sin(beta)];
-        const u=(angle:number)=>add(scale(lateral,Math.sin(angle)),scale(g.torsoDirection,-Math.cos(angle)));
-        const du=(angle:number)=>add(scale(lateral,Math.cos(angle)),scale(g.torsoDirection,Math.sin(angle)));
-        const active=side===1;
+        const plane=(setup.movementPlane??0)*RAD;
+        const lateral=scale(cross(g.torsoDirection,g.normal),side);
+        const raised=add(scale(lateral,Math.cos(plane)),scale(g.normal,Math.sin(plane)));
+        const u=(angle:number)=>add(scale(raised,Math.sin(angle)),scale(g.torsoDirection,-Math.cos(angle)));
+        const du=(angle:number)=>add(scale(raised,Math.cos(angle)),scale(g.torsoDirection,Math.sin(angle)));
+        const active=movingSides.includes(side);
         upper=u(active?q:0);distal=u(active?q+setup.elbow*RAD:0);
-        upperDerivative=active?du(q):[0,0,0];distalDerivative=active?du(q+setup.elbow*RAD):[0,0,0];axis=g.normal;
-      } else if(model==='fly') {
-        const lateral:Vec3=[0,side,0];
-        const u=(angle:number)=>add(scale(lateral,Math.cos(angle)),scale(g.normal,Math.sin(angle)));
-        const du=(angle:number)=>add(scale(lateral,-Math.sin(angle)),scale(g.normal,Math.cos(angle)));
-        upper=u(q);distal=u(q+setup.elbow*RAD);upperDerivative=du(q);distalDerivative=du(q+setup.elbow*RAD);
-        axis=scale(g.torsoDirection,-side*setup.facing);
+        upperDerivative=active?du(q):[0,0,0];distalDerivative=active?du(q+setup.elbow*RAD):[0,0,0];axis=cross(raised,g.torsoDirection);
+      } else if(model==='fly'||model==='reverse-fly') {
+        const lateral=scale(bodyLateral,side);
+        const plane=(setup.movementPlane??0)*RAD;
+        const forward=add(scale(g.normal,Math.cos(plane)),scale(g.torsoDirection,Math.sin(plane)));
+        const u=(angle:number)=>add(scale(lateral,Math.cos(angle)),scale(forward,Math.sin(angle)));
+        const du=(angle:number)=>add(scale(lateral,-Math.sin(angle)),scale(forward,Math.cos(angle)));
+        const active=movingSides.includes(side);
+        upper=u(active?q:90);distal=u(active?q+setup.elbow*RAD:90);upperDerivative=active?du(q):[0,0,0];distalDerivative=active?du(q+setup.elbow*RAD):[0,0,0];
+        axis=cross(lateral,forward);
       } else {
         upper=sagittal(0);distal=sagittal(0);upperDerivative=[0,0,0];distalDerivative=[0,0,0];axis=[0,-setup.facing,0];
       }
@@ -519,20 +621,27 @@ export function geometry(setup:Setup,profile:Profile,qDegrees:number):Geometry {
   const resistance=setup.resistance??(model==='machine'?'unknown':'cable');
   if(model==='machine'||resistance==='unknown'||resistance==='dumbbell')g.cables=[];
   else if(model!=='pullover') {
-    const sides=model==='fly'?[-1,1]:model==='raise'||model==='hip'?[1]:movingSides;
-    g.cables=sides.map(side=>{
+    const sides=model==='hip'?[1]:movingSides;
+    g.cables=sides.map((side,index)=>{
       const i=side===-1?0:1,attachment=model==='hip'?g.hand:g.grips[i];
-      const outlet:Vec3=[setup.planeOffset??0,side*setup.outletSpacing/2,setup.pulleyHeight];
+      const outlet:Vec3=getOutletPosition(setup,index,side);
       const tension=getTension(setup),force=tension===null?null:cableForce(attachment,outlet,tension);
       return {attachment,outlet,force,length:length(sub(outlet,attachment)),derivative:model==='hip'?g.handDerivative:handDerivatives[i]};
     });
+    if((model==='curl'||model==='extension')&&movingSides.length===2&&setup.cables===1) {
+      const attachment=scale(add(g.grips[0],g.grips[1]),.5),outlet=getOutletPosition(setup,0,0);
+      const derivative=scale(add(handDerivatives[0],handDerivatives[1]),.5),tension=getTension(setup);
+      g.cables=[{attachment,outlet,force:tension===null?null:cableForce(attachment,outlet,tension),length:length(sub(outlet,attachment)),derivative}];
+      g.hasBar=true;
+    }
   }
   for(const cable of g.cables)if(cable.force)g.loads.push({point:cable.attachment,force:cable.force,derivative:cable.derivative??g.handDerivative,kind:'cable'});
   if(resistance==='dumbbell') {
     if(setup.loadMass===undefined)g.gravityKnown=false;
     else for(const side of movingSides) {
       const i=side===-1?0:1,point=model==='hip'?g.hand:g.grips[i];
-      g.loads.push({point,force:[0,0,-setup.loadMass*9.81],derivative:model==='hip'?g.handDerivative:handDerivatives[i],kind:'gravity'});
+      const mass=setup.loadMass/(setup.freeWeightKind==='barbell'||setup.freeWeightKind==='shared'?movingSides.length:1);
+      g.loads.push({point,force:[0,0,-mass*9.81],derivative:model==='hip'?g.handDerivative:handDerivatives[i],kind:'gravity'});
     }
   }
   if(setup.segmentGravity) {
@@ -553,6 +662,19 @@ export function geometry(setup:Setup,profile:Profile,qDegrees:number):Geometry {
         {point:distalCenter,force:[0,0,-setup.forearmMass*9.81],derivative:cross(axis,sub(distalCenter,elbowModel?E:S)),kind:'gravity'});
     }
   }
+  if(resistance==='dumbbell'&&setup.freeWeightKind==='barbell'&&movingSides.length===2)g.hasBar=true;
+  if(g.hasBar&&model!=='pullover'&&model!=='machine') {
+    const delta=sub(g.grips[1],g.grips[0]),span=length(delta),barLength=setup.barLength??Math.max(.6,setup.attachmentSpacing+.08);
+    const movingGripPlane=(model==='curl'||model==='extension')&&Math.abs(Math.sin((setup.movementPlane??0)*RAD))>1e-8;
+    const movingRaisePlane=model==='raise'&&Math.abs(Math.cos((setup.movementPlane??0)*RAD))>1e-8;
+    if(movingGripPlane||movingRaisePlane||span>barLength+NUMERIC_EPSILON||Math.abs(span-(setup.gripWidth??profile.shoulderWidth))>1e-6||Math.abs(g.grips[0][0]-g.grips[1][0])>1e-6||Math.abs(g.grips[0][2]-g.grips[1][2])>1e-6) {
+      g.gripCompatible=false;g.validityReason='The rigid bar cannot connect both prescribed grips without changing the arm pose.';
+    }
+    if(span>NUMERIC_EPSILON){const center=scale(add(g.grips[0],g.grips[1]),.5),half=scale(delta,barLength/(2*span));g.barEnds=[sub(center,half),add(center,half)];}
+  }
+  buildIsolatedJoint(setup,profile,qDegrees,g,getTension(setup));
+  g.travelValid=g.cables.every(cable=>cable.length>=(setup.cableTravelMin??0)-NUMERIC_EPSILON&&cable.length<=(setup.cableTravelMax??Infinity)+NUMERIC_EPSILON);
+  if(!g.travelValid){g.cables.forEach(cable=>{cable.force=null;});g.loads=g.loads?.filter(load=>load.kind!=='cable');}
   return g;
 }
 
@@ -600,11 +722,23 @@ export function backrestContact(
     start,
     end,
     g.backBase,
-    [g.torsoDirection, cross(g.torsoDirection,g.normal), g.normal],
+    g.backrestAxes??[g.torsoDirection, cross(g.torsoDirection,g.normal), g.normal],
     [0, -setup.backWidth / 2, -setup.backThickness / 2],
     [setup.backLength, setup.backWidth / 2, setup.backThickness / 2],
     radius,
   );
+}
+
+const collisionCache=new Map<string,CollisionBands>();
+/** Cached continuous bounds for explicitly enabled body and equipment geometry. */
+export function collisionIntervals(setup:Setup,profile:Profile):CollisionBands {
+  if(!setup.bodyCollision&&!setup.obstacles?.length)return {unsafe:[],unresolved:[]};
+  const key=JSON.stringify([setup,profile]);
+  const cached=collisionCache.get(key);if(cached)return cached;
+  const bands=collisionBands(setup,profile,geometry,getDefinition(setup).coordinateScale??RAD);
+  collisionCache.set(key,bands);
+  if(collisionCache.size>32)collisionCache.delete(collisionCache.keys().next().value!);
+  return bands;
 }
 
 export function evaluate(setup:Setup,profile:Profile,qDegrees:number):Evaluation {
@@ -617,35 +751,56 @@ export function evaluate(setup:Setup,profile:Profile,qDegrees:number):Evaluation
   const assumptions=[
     definition.forceConvention,
     'Quasi-static: inertia and friction excluded; no muscle forces or growth prediction.',
-    resistance==='dumbbell'?'Dumbbell weight acts vertically downward.':setup.slack?'Cable explicitly slack; its hanging route is not predicted.':'Tension and cable travel assumed available.',
-    setup.segmentGravity?'Explicit segment masses, uniform-rod centres of mass.':'Body segment and bar weight excluded.',
+    resistance==='dumbbell'?(setup.freeWeightKind==='barbell'||setup.freeWeightKind==='shared'?'Specified shared implement mass is total, counted once; only the total symmetric contribution is inferred.':'Specified dumbbell mass is per loaded hand; gravity acts downward.'):setup.slack?'Cable explicitly slack; its hanging route is not predicted.':setup.cableTravelMin!==undefined||setup.cableTravelMax!==undefined?'Declared free cable-length limits are enforced; tension is unknown beyond them.':'Tension and cable travel assumed available.',
+    setup.segmentGravity?'Explicit segment masses, uniform-rod centres of mass.':'Body-segment weight excluded; any explicitly declared free-weight implement mass is included.',
     'Ground supports are kinematic constraints; reaction forces and balance are not calculated.',
   ];
+  if(resistance==='cable')assumptions.push('Cable attachment and bar self-weight are excluded; selected stack mass represents the force source, not attachment weight.');
+  if(setup.bodyCollision)assumptions.push(`Body clearance uses illustrative uniform capsules of radius ${setup.bodyRadius??.06} m; body self-contact and unrepresented tissue are excluded.`);
+  if(setup.obstacles?.length)assumptions.push('Clearance includes only the explicitly named apparatus boxes/capsules. Tiny unresolved continuous boundaries are conservatively unavailable.');
   if(model==='pullover')assumptions.push('Symmetric upper arms with a solved rigid grip; fixed anatomical elbow bend; no individual shoulder force-sharing estimate.');
+  if(setup.gripStyle)assumptions.push(`Grip annotation: ${setup.gripStyle}. No change in recruitment or muscle-specific force is inferred from grip style.`);
+  if(setup.stackArrangement==='shared')assumptions.push('Shared stack: supplied transmission factor must describe force at EACH attachment; no independent-stack mass doubling is assumed.');
   if(model==='raise'&&setup.tilt!==0)assumptions.push('Frontal torso lean is prescribed; an external support is assumed, with its reaction excluded from the arm calculation.');
   const result=(status:Status,moment:number|null=null,contact:Vec3|null=null,contactKind:string|null=null,reason?:string):Evaluation=>({
     geometry:g,moment,status,contact,contactKind,cableMoment,gravityMoment,assumptions,
     metricLabel:model==='pullover'?'Total symmetric external contribution':model==='fly'?'Total bilateral shoulder-adduction contribution':`${definition.family} external contribution`,
-    referenceAction:definition.action,outputLevel:status==='unknown'?'geometry':'external-mechanics',validityReason:reason,
+    referenceAction:definition.action,outputLevel:['unknown','invalid','contact','singular'].includes(status)?'geometry':'external-mechanics',validityReason:reason,
   });
-  if(resistance==='cable'&&((model==='fly'&&setup.cables!==2)||((model==='raise'||model==='hip')&&setup.cables!==1))) {
-    cableMoment=null;gravityMoment=null;
-    return result('invalid',null,null,null,model==='fly'?'The bilateral fly model requires two independent cable handles.':'This unilateral model requires one cable attachment.');
+  if(setup.equipmentLimits&&!setup.exploration) {
+    const limits=setup.equipmentLimits;
+    const heights=g.cables.map(c=>c.outlet[2]);
+    if(setup.hipX<limits.distanceMin-NUMERIC_EPSILON||setup.hipX>limits.distanceMax+NUMERIC_EPSILON||heights.some(z=>z<limits.pulleyMin-NUMERIC_EPSILON||z>limits.pulleyMax+NUMERIC_EPSILON)) {
+      cableMoment=null;gravityMoment=null;return result('invalid',null,null,null,'The setup exceeds its declared apparatus adjustment limits. Change the represented limits or explicitly enable exploration.');
+    }
   }
+  if(resistance==='cable'&&setup.cables!==g.cables.length) {
+    cableMoment=null;gravityMoment=null;
+    return result('invalid',null,null,null,'The cable count does not match the number of loaded handles in this model. Choose matching unilateral/bilateral settings.');
+  }
+  if((model==='pullover'||model==='machine')&&setup.posture==='side-lying'){cableMoment=null;gravityMoment=null;return result('invalid',null,null,null,'The symmetric rigid-bar pullover requires a sagittal torso support; choose supine, prone, seated or standing.');}
   if(!g.supportValid||!g.gripCompatible){cableMoment=null;gravityMoment=null;return result('invalid',null,null,null,g.validityReason);}
-  if([g.hip,g.shoulder,g.elbow,g.hand].some(point=>point[2]<-NUMERIC_EPSILON)||g.hand[2]<(model==='hip'?ANKLE_HEIGHT:BAR_RADIUS)-NUMERIC_EPSILON||g.cables.some(cable=>cable.outlet[2]<0)) {
+  const legModel=model==='hip'||model.startsWith('hip-')||model.startsWith('knee-');
+  if([g.hip,g.shoulder,g.elbow,g.hand].some(point=>point[2]<-NUMERIC_EPSILON)||g.hand[2]<(legModel?ANKLE_HEIGHT:setup.barRadius??BAR_RADIUS)-NUMERIC_EPSILON||g.cables.some(cable=>cable.outlet[2]<0)) {
     cableMoment=null;gravityMoment=null;return result('invalid',null,null,null,'A represented body segment or load crosses the floor.');
   }
   if(setup.kind==='bench') {
     for(const cable of setup.slack?[]:g.cables) {
-      const contact=backrestContact(cable.attachment,cable.outlet,g,setup,CABLE_RADIUS);
+      const contact=backrestContact(cable.attachment,cable.outlet,g,setup,setup.cableRadius??CABLE_RADIUS);
       if(contact){cableMoment=null;return result('contact',null,contact,'cable–backrest','The backrest redirects the cable; direct-line mechanics are invalid.');}
     }
     if(g.hasBar) {
-      const contact=backrestContact(g.barEnds[0],g.barEnds[1],g,setup,BAR_RADIUS);
+      const contact=backrestContact(g.barEnds[0],g.barEnds[1],g,setup,setup.barRadius??BAR_RADIUS);
       if(contact){cableMoment=null;return result('contact',null,contact,'bar–backrest','The rigid bar contacts the represented backrest.');}
     }
   }
+  const extraContact=collisionAt(setup,g);
+  if(extraContact){cableMoment=null;gravityMoment=null;return result('contact',null,extraContact.point,extraContact.kind,`${extraContact.label}. The represented contact invalidates the direct free-motion model.`);}
+  const bands=collisionIntervals(setup,profile);
+  if([...bands.unresolved,...bands.unsafe].some(([a,b])=>qDegrees>=a&&qDegrees<=b)) {
+    cableMoment=null;gravityMoment=null;return result('invalid',null,null,null,'Clearance at this conservative interval boundary could not be certified; this position is unavailable.');
+  }
+  if(!g.travelValid){cableMoment=null;return result('unknown',null,null,null,'A free cable segment exceeds its declared travel limits. The assumed attachment force is unavailable at this position.');}
   if(model==='machine'||resistance==='unknown'||!knownCable||!g.gravityKnown) return result('unknown',null,null,null,model==='machine'?'No mechanism or measured resistance profile has been supplied.':!knownCable?'Actual cable force or transmission factor is unknown.':'Gravity requires an explicit load mass and, when enabled, supported segment masses.');
   if(g.cables.some(cable=>cable.length<=NUMERIC_EPSILON)){cableMoment=null;return result('singular',null,null,null,'Cable attachment and outlet coincide.');}
   const moment=cableMoment!+gravityMoment!;
@@ -656,12 +811,13 @@ export function evaluate(setup:Setup,profile:Profile,qDegrees:number):Evaluation
   return result(status,moment);
 }
 
-type HarmonicPath={center:Vec3;cosine:Vec3;sine:Vec3};
+type HarmonicPath={center:Vec3;cosine:Vec3;sine:Vec3;linear?:boolean};
 function harmonicPath(zero:Vec3,ninety:Vec3,oneEighty:Vec3):HarmonicPath {
   const center=scale(add(zero,oneEighty),0.5);
   return {center,cosine:scale(sub(zero,oneEighty),0.5),sine:sub(ninety,center)};
 }
 function planeCrossingAngles(path:HarmonicPath,normal:Vec3,constant:number,range:[number,number]):number[] {
+  if(path.linear){const rate=dot(normal,path.cosine);if(Math.abs(rate)<1e-12)return [];const q=(constant-dot(normal,path.center))/rate;return q>=range[0]-1e-8&&q<=range[1]+1e-8?[Math.max(range[0],Math.min(range[1],q))]:[];}
   const magnitude=length(normal);
   if(magnitude<1e-10)return [];
   const n=scale(normal,1/magnitude),a=dot(n,path.cosine),b=dot(n,path.sine),c=dot(n,path.center)-constant/magnitude;
@@ -683,8 +839,10 @@ function planeCrossingAngles(path:HarmonicPath,normal:Vec3,constant:number,range
  */
 export function contactAngles(setup:Setup,profile:Profile):number[] {
   if(setup.kind!=='bench')return [];
-  const poses=[0,90,180].map(q=>geometry(setup,profile,q)),g=poses[0],angles:number[]=[];
-  const axes:[Vec3,Vec3,Vec3]=[g.torsoDirection,cross(g.torsoDirection,g.normal),g.normal];
+  const linear=getDefinition(setup).angleUnit==='cm';
+  const poses=(linear?[0,1,2]:[0,90,180]).map(q=>geometry(setup,profile,q)),g=poses[0],angles:number[]=[];
+  const pathOf=(read:(g:Geometry)=>Vec3):HarmonicPath=>linear?{center:read(poses[0]),cosine:sub(read(poses[1]),read(poses[0])),sine:[0,0,0],linear:true}:harmonicPath(...poses.map(read) as [Vec3,Vec3,Vec3]);
+  const axes:[Vec3,Vec3,Vec3]=g.backrestAxes??[g.torsoDirection,cross(g.torsoDirection,g.normal),g.normal];
   const candidatePlanes=(path:HarmonicPath,radius:number,outlet?:Vec3)=>{
     const minimum:Vec3=[-radius,-setup.backWidth/2-radius,-setup.backThickness/2-radius];
     const maximum:Vec3=[setup.backLength+radius,setup.backWidth/2+radius,setup.backThickness/2+radius];
@@ -701,10 +859,33 @@ export function contactAngles(setup:Setup,profile:Profile):number[] {
       angles.push(...planeCrossingAngles(path,normal,dot(normal,outlet),setup.range));
     }
   };
-  if(!setup.slack)g.cables.forEach((cable,i)=>candidatePlanes(harmonicPath(...poses.map(p=>p.cables[i].attachment) as [Vec3,Vec3,Vec3]),CABLE_RADIUS,cable.outlet));
+  if(!setup.slack)g.cables.forEach((cable,i)=>candidatePlanes(pathOf(p=>p.cables[i].attachment),setup.cableRadius??CABLE_RADIUS,cable.outlet));
   // Pullover bar translation has constant lateral span; longitudinal/depth faces determine entry.
-  if(g.hasBar)candidatePlanes(harmonicPath(...poses.map(p=>p.hand) as [Vec3,Vec3,Vec3]),BAR_RADIUS);
+  if(g.hasBar)candidatePlanes(pathOf(p=>scale(add(p.barEnds[0],p.barEnds[1]),.5)),setup.barRadius??BAR_RADIUS);
   return [...new Set(angles.map(value=>Number(value.toFixed(10))))].sort((a,b)=>a-b);
+}
+
+/** Exact declared free-cable-length boundary candidates for circular or affine paths. */
+export function constraintAngles(setup:Setup,profile:Profile):number[] {
+  const limits=[setup.cableTravelMin,setup.cableTravelMax].filter((v):v is number=>v!==undefined);
+  const bands=collisionIntervals(setup,profile);
+  const collisionRoots=[...bands.unsafe,...bands.unresolved].flat();
+  if(!limits.length)return [...new Set(collisionRoots)].sort((a,b)=>a-b);
+  const linear=getDefinition(setup).angleUnit==='cm';
+  const poses=(linear?[0,1,2]:[0,90,180]).map(q=>geometry(setup,profile,q));
+  const roots:number[]=[...collisionRoots];
+  for(let i=0;i<poses[0].cables.length;i++) {
+    const points=poses.map(p=>p.cables[i].attachment) as [Vec3,Vec3,Vec3],outlet=poses[0].cables[i].outlet;
+    if(linear) {
+      const delta=sub(points[0],outlet),velocity=sub(points[1],points[0]),a=dot(velocity,velocity),b=2*dot(delta,velocity);
+      for(const limit of limits){const c=dot(delta,delta)-limit*limit,discriminant=b*b-4*a*c;if(a>1e-15&&discriminant>=-1e-12)for(const sign of [-1,1]){const q=(-b+sign*Math.sqrt(Math.max(0,discriminant)))/(2*a);if(q>=setup.range[0]&&q<=setup.range[1])roots.push(q);}}
+    } else {
+      const path=harmonicPath(...points),offset=sub(path.center,outlet);
+      const squared:HarmonicPath={center:[dot(offset,offset)+dot(path.cosine,path.cosine),0,0],cosine:[2*dot(offset,path.cosine),0,0],sine:[2*dot(offset,path.sine),0,0]};
+      for(const limit of limits)roots.push(...planeCrossingAngles(squared,[1,0,0],limit*limit,setup.range));
+    }
+  }
+  return [...new Set(roots)].sort((a,b)=>a-b);
 }
 
 /** Full ROM, including analytic contact candidates and samples inside every event interval. */
@@ -726,7 +907,7 @@ export function sampleCurve(setup: Setup, profile: Profile): CurvePoint[] {
       refine(middle, b, depth + 1);
     } else points.push(b);
   };
-  const candidates=[start,...contactAngles(setup,profile),end];
+  const candidates=[start,...contactAngles(setup,profile),...constraintAngles(setup,profile),end].sort((a,b)=>a-b);
   const angles=new Set<number>();
   for(let i=1;i<=subdivisions;i++)angles.add(start+((end-start)*i)/subdivisions);
   for(let i=0;i<candidates.length;i++) {
@@ -866,3 +1047,4 @@ export const presets: Setup[] = [
   variant({preset:'hip-extension',name:'Cable hip extension · ankle attachment',model:'hip',facing:-1,tilt:0,hipX:0.85,hipHeight:0.92,pulleyHeight:0.10,outletSpacing:0.30,attachmentSpacing:0,range:[0,50]}),
   variant({preset:'machine-unknown',name:'Pullover machine · mechanism unknown',model:'machine',resistance:'unknown',forceKnown:false,kind:'bench',facing:1,tilt:75,hipX:1.1,hipHeight:0.46,range:[50,170]}),
 ];
+presets.push(...extendedPresets(base));

@@ -1,4 +1,4 @@
-import { presets } from './engine';
+import { allExerciseEntries } from './allExercises';
 
 export type TrainingCandidate = { preset: string; name: string };
 export type TrainingMatch = {
@@ -68,11 +68,20 @@ export function matchExercise(original: string): TrainingMatch {
   const broad = BROAD_LABELS[normalized] ?? Object.entries(BROAD_LABELS).find(([alias]) => signature(alias) === key)?.[1];
   let candidates: TrainingCandidate[];
   if (broad) {
-    candidates = presets.filter(preset => broad.includes(preset.preset)).map(({ preset, name }) => ({ preset, name }));
+    candidates = allExerciseEntries.filter(entry => {
+      if (broad.includes(entry.id)) return true;
+      if (['pull', 'pullover', 'cable pullover'].includes(normalized))
+        return normalized === 'pull' ? /pull|row/i.test(entry.family) : /pullover/i.test(entry.family);
+      if (/curl/.test(normalized)) return /elbow flexion/i.test(entry.family) && (!normalized.includes('cable') || entry.equipment.includes('Cable'));
+      if (/tricep/.test(normalized)) return /elbow extension/i.test(entry.family) && (!normalized.includes('cable') || entry.equipment.includes('Cable'));
+      if (normalized === 'press') return entry.family === 'Presses';
+      if (/raise/.test(normalized)) return /lateral raise/i.test(entry.name);
+      return false;
+    }).map(({ id, name }) => ({ preset: id, name }));
   } else {
-    candidates = presets.filter(preset => [preset.name, preset.preset, ...(ALIASES[preset.preset] ?? [])]
+    candidates = allExerciseEntries.filter(entry => [entry.name, entry.id, ...entry.aliases, ...(ALIASES[entry.id] ?? [])]
       .some(alias => normalize(alias) === normalized || signature(alias) === key))
-      .map(({ preset, name }) => ({ preset, name }));
+      .map(({ id, name }) => ({ preset: id, name }));
   }
   const status = broad ? 'ambiguous' : candidates.length === 1 ? 'matched' : candidates.length > 1 ? 'ambiguous' : 'unrecognized';
   return {
@@ -83,11 +92,11 @@ export function matchExercise(original: string): TrainingMatch {
 
 /** An explicit user selection may resolve an ambiguous or unsupported label. */
 export function resolveTrainingMatch(item: TrainingMatch, presetId: string): TrainingMatch {
-  const preset = presets.find(preset => preset.preset === presetId);
+  const preset = allExerciseEntries.find(preset => preset.id === presetId);
   if (!preset) throw new Error('Choose an exercise from the supported catalog.');
   const candidates = item.candidates.some(candidate => candidate.preset === presetId)
     ? item.candidates.map(candidate => ({ ...candidate }))
-    : [...item.candidates, { preset: preset.preset, name: preset.name }];
+    : [...item.candidates, { preset: preset.id, name: preset.name }];
   return { ...item, status: 'matched', selectedPreset: presetId, candidates };
 }
 

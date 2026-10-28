@@ -24,8 +24,11 @@ import {
   type TrainingMatch,
 } from "./training";
 import { Field } from "./Field";
+import { AdvancedExerciseControls } from "./AdvancedExerciseControls";
 import "./workspace-tools.css";
-import { catalogEntries, emptyCatalogFilters, matchesCatalog, type CatalogFilters } from "./catalog";
+import { emptyCatalogFilters, type CatalogFilters } from "./catalog";
+import { allExerciseEntries, matchesExercise } from "./allExercises";
+import { readSelection, saveSelection, replaceSelectionWithBackup, SelectionProtectionError, type SelectionKey } from './selectionStorage';
 
 export function downloadText(
   text: string,
@@ -39,14 +42,44 @@ export function downloadText(
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function readFavorites(): string[] {
-  try {
-    return JSON.parse(
-      localStorage.getItem("biomechanics.exercise-favorites") ?? "[]",
-    ).filter((id: unknown) => typeof id === "string");
-  } catch {
-    return [];
-  }
+function useProtectedSelection<T>(key: SelectionKey, fallback: T) {
+  const [initial] = useState(() => readSelection(key, fallback));
+  const [value, setValue] = useState(initial.value);
+  const [blocked, setBlocked] = useState(initial.blocked);
+  const [error, setError] = useState(initial.error);
+  const latest = useRef({ value, blocked }); latest.current = { value, blocked };
+  const failed = (reason: unknown) => {
+    if (reason instanceof SelectionProtectionError) setBlocked(true);
+    const message = `${reason instanceof Error ? reason.message : 'Browser storage is unavailable.'} Current edits have not been saved.`;
+    setError(message); return message;
+  };
+  useEffect(() => {
+    if (blocked) return;
+    try { saveSelection(key, value); setError(''); } catch (reason) { failed(reason); }
+  }, [key, value, blocked]);
+  useEffect(() => {
+    const flush = (event: Event) => {
+      try {
+        if (latest.current.blocked) throw new Error('Unreadable exercise selection data is protected; download raw recovery before replacing it.');
+        saveSelection(key, latest.current.value); setError('');
+      } catch (reason) {
+        const message = failed(reason);
+        const errors = (event as CustomEvent<{ errors?: string[] }>).detail?.errors;
+        if (errors) errors.push(message);
+      }
+    };
+    window.addEventListener('biomechanics:flush-workspaces', flush);
+    return () => window.removeEventListener('biomechanics:flush-workspaces', flush);
+  }, [key]);
+  const recover = () => {
+    try { replaceSelectionWithBackup(key, value); setBlocked(false); setError(''); }
+    catch (reason) { failed(reason); }
+  };
+  return { value, setValue, blocked, error, recover };
+}
+function SelectionStorageNotice({ label, store }: { label: string; store: { error: string; blocked: boolean; recover: () => void } }) {
+  if (!store.error) return null;
+  return <div className="selection-storage-notice"><p role="alert">{label}: {store.error}</p>{store.blocked && <><p className="small-note">Whole workspace backup → Download raw recovery keeps the original contents in a file. Enabling saving also retains a local recovery copy before replacing this section.</p><button onClick={store.recover}>Preserve original & enable {label.toLowerCase()} saving</button></>}</div>;
 }
 export function ExerciseCatalog({
   onPick,
@@ -56,30 +89,23 @@ export function ExerciseCatalog({
   const [search, setSearch] = useState("");
   const [family, setFamily] = useState("all");
   const [filters, setFilters] = useState<CatalogFilters>({ ...emptyCatalogFilters });
-  const [favorites, setFavorites] = useState<string[]>(readFavorites);
+  const favoriteStore = useProtectedSelection<string[]>('biomechanics.exercise-favorites', []);
+  const { value: favorites, setValue: setFavorites } = favoriteStore;
   const [onlyFavorite, setOnlyFavorite] = useState(false);
   const [target, setTarget] = useState<0 | 1>(0);
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "biomechanics.exercise-favorites",
-        JSON.stringify(favorites),
-      );
-    } catch {}
-  }, [favorites]);
-  const groups = Array.from(new Set(catalogEntries.map((entry) => entry.family)));
+  const groups = Array.from(new Set(allExerciseEntries.map((entry) => entry.family)));
   const filterDefinitions: { key: keyof CatalogFilters; label: string; all: string; values: string[] }[] = [
-    { key: "muscleGroup", label: "Muscle group", all: "All muscle groups", values: catalogEntries.flatMap((entry) => [...entry.muscleGroups]) },
-    { key: "equipment", label: "Equipment", all: "All equipment", values: catalogEntries.flatMap((entry) => [...entry.equipment]) },
-    { key: "mainJoint", label: "Main joint", all: "All joints", values: catalogEntries.map((entry) => entry.mainJoint) },
-    { key: "posture", label: "Posture", all: "All postures", values: catalogEntries.flatMap((entry) => [...entry.postures]) },
-    { key: "laterality", label: "Sides", all: "Both arrangements", values: catalogEntries.map((entry) => entry.laterality) },
-    { key: "status", label: "Available model", all: "All model statuses", values: catalogEntries.map((entry) => entry.status) },
+    { key: "muscleGroup", label: "Muscle group", all: "All muscle groups", values: allExerciseEntries.flatMap((entry) => [...entry.muscleGroups]) },
+    { key: "equipment", label: "Equipment", all: "All equipment", values: allExerciseEntries.flatMap((entry) => [...entry.equipment]) },
+    { key: "mainJoint", label: "Main joint", all: "All joints", values: allExerciseEntries.map((entry) => entry.mainJoint) },
+    { key: "posture", label: "Posture", all: "All postures", values: allExerciseEntries.flatMap((entry) => [...entry.postures]) },
+    { key: "laterality", label: "Sides", all: "Both arrangements", values: allExerciseEntries.map((entry) => entry.laterality) },
+    { key: "status", label: "Available model", all: "All model statuses", values: allExerciseEntries.map((entry) => entry.status) },
   ];
-  const visible = catalogEntries.filter((entry) =>
+  const visible = allExerciseEntries.filter((entry) =>
     (family === "all" || entry.family === family) &&
-    (!onlyFavorite || favorites.includes(entry.setup.preset)) &&
-    matchesCatalog(entry, search, filters),
+    (!onlyFavorite || favorites.includes(entry.id)) &&
+    matchesExercise(entry, search, filters),
   );
   const hasFilters = search !== "" || family !== "all" || onlyFavorite || Object.values(filters).some((value) => value !== "all");
   const clearFilters = () => { setSearch(""); setFamily("all"); setOnlyFavorite(false); setFilters({ ...emptyCatalogFilters }); };
@@ -88,10 +114,11 @@ export function ExerciseCatalog({
       <summary>
         <span>Exercise catalog</span>
         <span className="drawer-description">
-          Six model families · one machine illustration
+          Isolated and compound movements · explicit model status
         </span>
       </summary>
       <div className="drawer-body">
+        <SelectionStorageNotice label="Favorites" store={favoriteStore}/>
         <div className="catalog-filters">
           <input
             type="search"
@@ -145,11 +172,11 @@ export function ExerciseCatalog({
           </div>
         </fieldset>
         <div className="catalog-results">
-          <p role="status" aria-live="polite">{visible.length} of {catalogEntries.length} setups</p>
+          <p role="status" aria-live="polite">{visible.length} of {allExerciseEntries.length} setups</p>
           {hasFilters && <button onClick={clearFilters}>Clear filters</button>}
         </div>
         <div className="catalog-list">
-          {visible.map((entry) => { const p = entry.setup; return (
+          {visible.map((entry) => { const p = { preset: entry.id, name: entry.name }; return (
             <div key={p.preset} className="catalog-item">
               <button
                 className="catalog-pick"
@@ -158,7 +185,7 @@ export function ExerciseCatalog({
                 <strong>{p.name}</strong>
                 <span>{entry.family} · {entry.mainJoint}</span>
                 <span>{entry.equipment.join(" + ")} · {entry.laterality}</span>
-                <span className={`catalog-model-status ${entry.status === "Geometry only" ? "catalog-geometry-only" : ""}`}>{entry.status === "Geometry only" ? "Geometry only · mechanism unknown" : "External mechanics · simplified model"}</span>
+                <span className={`catalog-model-status ${entry.status === "Geometry only" ? "catalog-geometry-only" : ""}`}>{entry.status === "Geometry only" ? "Geometry only · mechanism unknown" : `${entry.status} · simplified model`}</span>
               </button>
               <button
                 aria-label={`${favorites.includes(p.preset) ? "Unfavorite" : "Favorite"} ${p.name}`}
@@ -451,50 +478,11 @@ export function TrainingImport({
 }: {
   onPick: (side: 0 | 1, preset: string) => void;
 }) {
-  const [text, setText] = useState(() => {
-    try {
-      return localStorage.getItem("biomechanics.training-list") ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const [matches, setMatches] = useState<TrainingMatch[]>(() => {
-    try {
-      const rows = JSON.parse(
-        localStorage.getItem("biomechanics.training-matches") ?? "[]",
-      );
-      if (!Array.isArray(rows)) return [];
-      return rows
-        .filter(
-          (m: TrainingMatch) =>
-            m &&
-            typeof m.original === "string" &&
-            typeof m.id === "string" &&
-            typeof m.label === "string" &&
-            Array.isArray(m.candidates) &&
-            ["matched", "ambiguous", "unrecognized"].includes(m.status) &&
-            (!m.selectedPreset ||
-              presets.some((p) => p.preset === m.selectedPreset)),
-        )
-        .slice(0, 500);
-    } catch {
-      return [];
-    }
-  });
+  const textStore = useProtectedSelection<string>('biomechanics.training-list', '');
+  const matchStore = useProtectedSelection<TrainingMatch[]>('biomechanics.training-matches', []);
+  const { value: text, setValue: setText } = textStore;
+  const { value: matches, setValue: setMatches } = matchStore;
   const [error, setError] = useState("");
-  useEffect(() => {
-    try {
-      localStorage.setItem("biomechanics.training-list", text);
-    } catch {}
-  }, [text]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "biomechanics.training-matches",
-        JSON.stringify(matches),
-      );
-    } catch {}
-  }, [matches]);
   return (
     <details className="workspace-drawer">
       <summary>
@@ -504,6 +492,8 @@ export function TrainingImport({
         </span>
       </summary>
       <div className="drawer-body">
+        <SelectionStorageNotice label="Exercise-list text" store={textStore}/>
+        <SelectionStorageNotice label="Exercise mappings" store={matchStore}/>
         <p className="small-note">
           Import serves exercise selection. Loads, sets and repetitions are not
           interpreted as force or coaching instructions.
@@ -556,8 +546,8 @@ export function TrainingImport({
                 }}
               >
                 <option value="">Choose a matching exercise</option>
-                {presets.map((p) => (
-                  <option key={p.preset} value={p.preset}>
+                {allExerciseEntries.map((p) => (
+                  <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
@@ -582,266 +572,43 @@ export function TrainingImport({
   );
 }
 
-export function ModelControls({
-  setup,
-  profile,
-  letter,
-  change,
-}: {
-  setup: Setup;
-  profile: Profile;
-  letter: string;
-  change: (key: keyof Setup, value: unknown) => void;
+export function ModelControls({ setup:s, profile, letter:L, change }: {
+  setup:Setup;profile:Profile;letter:string;change:(key:keyof Setup,value:unknown)=>void;
 }) {
-  const model = setup.model ?? "pullover";
-  const d = getDefinition(setup);
-  const known =
-    setup.forceKnown !== false &&
-    setup.resistance !== "unknown" &&
-    model !== "machine";
-  const cable = setup.resistance !== "dumbbell";
-  return (
-    <details open>
-      <summary>Movement model & load</summary>
-      <div className="details-content">
-        <p className="small-note">
-          <strong>{d.family}</strong> · Reference action: {d.action}. Values
-          describe {d.forceConvention}.
-        </p>
-        {model !== "machine" && (
-          <>
-            <label className="select-field">
-              Facing direction
-              <select
-                aria-label={`${letter} facing direction`}
-                value={setup.facing}
-                onChange={(e) => change("facing", Number(e.target.value))}
-              >
-                <option value={-1}>Toward the outlet plane</option>
-                <option value={1}>Away from the outlet plane</option>
-              </select>
-            </label>
-            <label className="select-field">
-              Resistance
-              <select
-                aria-label={`${letter} resistance type`}
-                value={setup.resistance ?? "cable"}
-                onChange={(e) => change("resistance", e.target.value)}
-              >
-                <option value="cable">Cable force</option>
-                {["raise", "curl", "extension", "fly"].includes(model) && (
-                  <option value="dumbbell">Gravity / free weight</option>
-                )}
-                <option value="unknown">Unknown resistance</option>
-              </select>
-            </label>
-            {known && cable && (
-              <>
-                <label className="select-field">
-                  Load entry
-                  <select
-                    aria-label={`${letter} load entry`}
-                    value={setup.loadMode ?? "force"}
-                    onChange={(e) => change("loadMode", e.target.value)}
-                  >
-                    <option value="force">Actual force (N)</option>
-                    <option value="mass">Selected mass + factor</option>
-                  </select>
-                </label>
-                {setup.loadMode === "mass" && (
-                  <>
-                    <Field
-                      label={`${letter} · Selected mass`}
-                      value={setup.loadMass ?? 10}
-                      min={0}
-                      max={200}
-                      unit="kg"
-                      step={0.5}
-                      onChange={(v) => change("loadMass", v)}
-                    />
-                    <Field
-                      label={`${letter} · Force transmission factor`}
-                      value={setup.transmissionFactor ?? 1}
-                      min={0.05}
-                      max={2}
-                      unit="×"
-                      step={0.05}
-                      onChange={(v) => change("transmissionFactor", v)}
-                      note="Force = mass × 9.81 × factor. Use 1 when a manufacturer's value is already corrected."
-                    />
-                  </>
-                )}
-                <label className="inline-check">
-                  <input
-                    type="checkbox"
-                    checked={setup.slack ?? false}
-                    onChange={(e) => change("slack", e.target.checked)}
-                  />
-                  Cable explicitly slack
-                </label>
-                <label className="inline-check">
-                  <input
-                    type="checkbox"
-                    checked={setup.forceKnown !== false}
-                    onChange={(e) => change("forceKnown", e.target.checked)}
-                  />
-                  Actual cable force is known
-                </label>
-              </>
-            )}
-            {!known && setup.resistance !== "unknown" && (
-              <label className="inline-check">
-                <input
-                  type="checkbox"
-                  checked={false}
-                  onChange={() => change("forceKnown", true)}
-                />
-                Actual cable force is known
-              </label>
-            )}
-            {!cable && known && (
-              <Field
-                label={`${letter} · Free-weight mass`}
-                value={setup.loadMass ?? 5}
-                min={0}
-                max={80}
-                step={0.25}
-                unit="kg"
-                onChange={(v) => change("loadMass", v)}
-                note="Mass per loaded hand. Bilateral models include both loads."
-              />
-            )}
-          </>
-        )}
-        {["curl", "extension"].includes(model) && (
-          <Field
-            label={`${letter} · Upper-arm elevation`}
-            value={setup.upperArmAngle ?? 0}
-            min={-60}
-            max={200}
-            unit="°"
-            onChange={(v) => change("upperArmAngle", v)}
-            note="Upper-arm posture is fixed while the elbow moves."
-          />
-        )}
-        {["raise", "fly"].includes(model) && (
-          <Field
-            label={`${letter} · Outlet fore–aft offset`}
-            value={(setup.planeOffset ?? 0) * 100}
-            min={-200}
-            max={200}
-            unit="cm"
-            onChange={(v) => change("planeOffset", v / 100)}
-            note="Signed position of the outlet in front of or behind the body's movement plane."
-          />
-        )}
-        {model === "pullover" && (
-          <>
-            <Field
-              label={`${letter} · Bar length`}
-              value={
-                (setup.barLength ??
-                  Math.max(0.6, setup.attachmentSpacing + 0.08)) * 100
-              }
-              min={10}
-              max={300}
-              unit="cm"
-              onChange={(v) => change("barLength", v / 100)}
-            />
-            <Field
-              label={`${letter} · Grip separation`}
-              value={(setup.gripWidth ?? profile.shoulderWidth) * 100}
-              min={10}
-              max={100}
-              unit="cm"
-              onChange={(v) => change("gripWidth", v / 100)}
-              note="The arm solver preserves segment lengths and the fixed elbow angle. Incompatible widths are flagged."
-            />
-            <button onClick={() => change("gripWidth", undefined)}>
-              Derive grip width from shoulders
-            </button>
-            <label className="select-field">
-              Posture
-              <select
-                aria-label={`${letter} posture`}
-                value={
-                  setup.posture ??
-                  (setup.kind === "bench" ? "seated" : "standing")
-                }
-                onChange={(e) => change("posture", e.target.value)}
-              >
-                <option value="standing">Standing</option>
-                <option value="kneeling">Kneeling</option>
-                <option value="seated">Seated / bench supported</option>
-              </select>
-            </label>
-            <p className="small-note">
-              Standing and kneeling leg lengths must reach the floor from the
-              pelvis anchor. Incompatible support geometry is flagged.
-            </p>
-          </>
-        )}
-        {model !== "machine" && (
-          <>
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={setup.segmentGravity ?? false}
-                onChange={(e) => change("segmentGravity", e.target.checked)}
-              />
-              Include explicitly estimated segment weight
-            </label>
-            {setup.segmentGravity && (
-              <>
-                <Field
-                  label={`${letter} · ${model === "hip" ? "Thigh mass" : "Upper segment mass"}`}
-                  value={
-                    model === "hip"
-                      ? (setup.thighMass ?? 0)
-                      : (setup.upperArmMass ?? 0)
-                  }
-                  min={0}
-                  max={15}
-                  step={0.1}
-                  unit="kg"
-                  onChange={(v) =>
-                    change(model === "hip" ? "thighMass" : "upperArmMass", v)
-                  }
-                  note={
-                    model === "hip"
-                      ? "Thigh mass; center of mass assumed at segment midpoint."
-                      : "Upper-arm mass; center of mass assumed at segment midpoint."
-                  }
-                />
-                <Field
-                  label={`${letter} · ${model === "hip" ? "Lower-leg mass" : "Distal segment mass"}`}
-                  value={
-                    model === "hip"
-                      ? (setup.shankMass ?? 0)
-                      : (setup.forearmMass ?? 0)
-                  }
-                  min={0}
-                  max={15}
-                  step={0.1}
-                  unit="kg"
-                  onChange={(v) =>
-                    change(model === "hip" ? "shankMass" : "forearmMass", v)
-                  }
-                  note={
-                    model === "hip"
-                      ? "Lower-leg mass; center of mass assumed at segment midpoint."
-                      : "Forearm/hand mass; center of mass assumed at segment midpoint."
-                  }
-                />
-              </>
-            )}
-          </>
-        )}
-        <p className="small-note">
-          Quasi-static model: animation speed does not change the calculated
-          forces. Exact muscle force, effort and growth are not calculated.
-        </p>
-      </div>
-    </details>
-  );
+  const model=s.model??'pullover',d=getDefinition(s),leg=/^(hip|knee)/.test(model),distal=/^(wrist|forearm)/.test(model);
+  const known=s.forceKnown!==false&&s.resistance!=='unknown'&&model!=='machine',cable=s.resistance!=='dumbbell';
+  const number=(key:keyof Setup,label:string,value:number,min:number,max:number,unit='°',step=1,note?:string)=><Field key={key} label={`${L} · ${label}`} value={value} min={min} max={max} unit={unit} step={step} note={note} onChange={v=>change(key,v)}/>;
+  const select=(key:keyof Setup,label:string,value:string,options:[string,string][],aria?:string)=><label className="select-field">{label}<select aria-label={aria??`${L} ${label.toLowerCase()}`} value={value} onChange={e=>change(key,e.target.value)}>{options.map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label>;
+  return <><details open><summary>Movement model & load</summary><div className="details-content">
+    <p className="small-note"><strong>{d.family}</strong> · Reference action: {d.action}. Values describe {d.forceConvention}.</p>
+    {model!=='machine'&&<>
+      <label className="select-field">Facing direction<select aria-label={`${L} facing direction`} value={s.facing} onChange={e=>change('facing',Number(e.target.value))}><option value={-1}>Toward the outlet plane</option><option value={1}>Away from the outlet plane</option></select></label>
+      {select('resistance','Resistance',s.resistance??'cable',[['cable','Cable force'],['dumbbell','Gravity / free weight'],['unknown','Unknown resistance']],`${L} resistance type`)}
+      {known&&cable&&<>
+        {select('loadMode','Load entry',s.loadMode??'force',[['force','Actual force (N)'],['mass','Selected mass + factor']])}
+        {s.loadMode==='mass'&&<>{number('loadMass','Selected mass',s.loadMass??10,0,500,'kg',.5)}{s.transmissionFactor===undefined?<><p className="small-note">Transmission is unknown; selected mass does not determine attachment force.</p><button onClick={()=>change('transmissionFactor',1)}>Declare factor 1</button></>:<>{number('transmissionFactor','Force transmission factor',s.transmissionFactor,0,10,'×',.05,'Force per attachment = total selected mass × 9.81 × this attachment factor.')}<button onClick={()=>change('transmissionFactor',undefined)}>Mark transmission unknown</button></>}</>}
+        <label className="inline-check"><input type="checkbox" checked={s.slack??false} onChange={e=>change('slack',e.target.checked)}/>Cable explicitly slack</label>
+        <label className="inline-check"><input type="checkbox" checked={s.forceKnown!==false} onChange={e=>change('forceKnown',e.target.checked)}/>Actual cable force is known</label>
+      </>}
+      {!known&&s.resistance!=='unknown'&&<label className="inline-check"><input type="checkbox" checked={false} onChange={()=>change('forceKnown',true)}/>Actual cable force is known</label>}
+      {!cable&&known&&<>
+        {select('freeWeightKind','Free-weight convention',s.freeWeightKind??'dumbbell',[['dumbbell','Mass per loaded hand / ankle'],['barbell','Total rigid-bar mass'],['shared','Total shared implement mass']])}
+        {number('loadMass','Free-weight mass',s.loadMass??5,0,500,'kg',.25,s.freeWeightKind==='barbell'||s.freeWeightKind==='shared'?'Total implement mass, counted once. For two hands only total generalized resistance is inferred.':'Mass per loaded hand or ankle. Bilateral models include two loads.')}
+      </>}
+      {!leg&&model!=='pullover'&&select('loadedSides','Loaded sides',s.loadedSides??(['fly','reverse-fly','shrug'].includes(model)||s.cables===2?'bilateral':'unilateral'),[['unilateral','One loaded side'],['bilateral','Both loaded sides']])}
+      {select('posture','Posture',s.posture??(s.kind==='bench'?'seated':'standing'),[['standing','Standing'],['kneeling','Kneeling'],['seated','Seated / bench supported'],['supine','Supine / face up'],['prone','Prone / face down'],...(model==='pullover'?[]:[['side-lying','Side lying']] as [string,string][])])}
+      <p className="small-note">Segment lengths stay fixed. Incompatible supports, bar grips and floor intersections are flagged; support reaction forces are not inferred.</p>
+    </>}
+    {(['curl','extension'].includes(model)||distal)&&number('upperArmAngle','Upper-arm elevation',s.upperArmAngle??0,-90,200,'°',1,'Upper-arm posture remains fixed while the distal joint moves.')}
+    {['raise','fly','reverse-fly','curl','extension'].includes(model)&&number('movementPlane','Movement plane',s.movementPlane??0,-180,180,'°',1,model==='raise'?'0° lateral, 30° scaption, 90° forward elevation. This changes the actual arm trajectory.':model==='fly'||model==='reverse-fly'?'0° horizontal adduction; positive planes tilt the forward hand path upward. Different planes have different axes.':'Rotates the forearm motion plane around the fixed upper arm; rigid bars may become incompatible.')}
+    {s.posture==='side-lying'&&number('bodyRoll','Body roll',s.bodyRoll??-90,-180,180,'°',1,'Sets the supported torso orientation; this is a prescribed body frame.')}
+    {model.startsWith('knee-')&&number('jointPlacement','Thigh placement',s.jointPlacement??90,-180,200,'°',1,'Fixed thigh angle from downward vertical, with the knee moving in the prescribed sagittal plane.')}
+    {distal&&number('elbow','Fixed elbow flexion',s.elbow,0,160)}
+    {model.startsWith('wrist-')&&number('forearmRotation','Forearm rotation',s.forearmRotation??0,-180,180,'°',1,'Rotates the anatomical wrist-flexion plane; 180° reverses palm orientation.')}
+    {model==='forearm-rotation'&&<><Field label={`${L} · Rotation lever offset`} value={(s.rotationLever??.12)*100} min={.5} max={100} unit="cm" step={.5} onChange={v=>change('rotationLever',v/100)} note="Explicit perpendicular load lever; a load on the forearm axis produces zero moment."/>{select('rotationDirection','Reference rotation',s.rotationDirection??'pronation',[['pronation','Positive rotation / pronation'],['supination','Negative rotation / supination']])}</>}
+    {['curl','extension'].includes(model)&&<>{select('gripStyle','Grip annotation',s.gripStyle??'supinated',[['supinated','Supinated'],['neutral','Neutral / hammer'],['pronated','Pronated / reverse'],['ez','EZ handle']])}<p className="small-note">Grip labels do not change recruitment or muscle force. Only the declared segment path, load and joint axis affect this external calculation.</p></>}
+    {(model==='pullover'||s.freeWeightKind==='barbell')&&<><Field label={`${L} · Bar length`} value={(s.barLength??Math.max(.6,s.attachmentSpacing+.08))*100} min={10} max={300} unit="cm" onChange={v=>change('barLength',v/100)}/><Field label={`${L} · Grip separation`} value={(s.gripWidth??profile.shoulderWidth)*100} min={5} max={150} unit="cm" onChange={v=>change('gripWidth',v/100)} note="Segment lengths and fixed elbow bend are preserved. Incompatible widths are flagged."/><button onClick={()=>change('gripWidth',undefined)}>Derive grip width from shoulders</button></>}
+    {model!=='machine'&&<><label className="inline-check"><input type="checkbox" checked={s.segmentGravity??false} onChange={e=>change('segmentGravity',e.target.checked)}/>Include explicitly estimated segment weight</label>{s.segmentGravity&&(distal?number('handMass','Moving hand mass',s.handMass??0,0,5,'kg',.05,'Uniform hand segment; this mass must be explicitly estimated.'):<>{number(leg?'thighMass':'upperArmMass',leg?'Thigh mass':'Upper segment mass',(leg?s.thighMass:s.upperArmMass)??0,0,50,'kg',.1,'Explicit mass; center of mass at the segment midpoint.')}{number(leg?'shankMass':'forearmMass',leg?'Lower-leg mass':'Distal segment mass',(leg?s.shankMass:s.forearmMass)??0,0,50,'kg',.1,'Explicit mass; center of mass at the segment midpoint.')}</>)}</>}
+    <p className="small-note">Quasi-static model: animation speed does not change the calculated forces. Exact muscle force, effort and growth are not calculated.</p>
+  </div></details><AdvancedExerciseControls setup={s} profile={profile} letter={L} change={change}/></>;
 }

@@ -1,5 +1,26 @@
 # Change history
 
+## 28 October 2026 — Unified biomechanics workspaces
+
+Expanded the application around the handoff's whole target catalog. A shared searchable catalog now routes isolated coordinates, compound movements and machine illustrations into their appropriate workspaces. The family-by-family [coverage map](docs/COVERAGE.md) explains what is quantitative, conditional or unknown instead of using a preset count as the measure of completion.
+
+Added broad isolated configurations and movement planes, explicit outlets, unilateral/bilateral and shared-implement conventions, hip/knee/wrist/forearm models, and translational shrugs. Coordinate metadata carries units through curves, selected-region work and power: shrug force is N and work integrates centimetres converted to metres. Inclined fly planes change trajectories, not just names or outlet height.
+
+Added optional body-capsule and named seat/frame obstacle contacts, conservative continuous clearance intervals, declared cable-travel bounds and equipment adjustment limits. Unresolved clearance remains unavailable; an input-limit exploration override does not disable collision or travel checks.
+
+Added a compound A/B workspace with orbitable shared views, prescribed paths, body-segment masses, assistance, independent controls, saved comparisons and portable files. Path results are J per unit progress. Eligible open-arm models expose their declared external axis components; closed-chain support reactions and universal joint moments are not invented. Unknown lever and commercial-machine examples remain explicitly geometric.
+
+Added machine A/B profiles for levers, cable/belt transmission, supplied cam arms, specified four-bar linkages and measured/supplied curves. Separate lifting/lowering branches, supported domains, absolute uncertainty, source identity and optional justified human-joint mappings remain explicit. A theoretical example is not presented as a calibration.
+
+Added an interactive placement map and constrained search that keeps body, actual force and original ROM fixed. Multiple candidates expose objective/relocation/sensitivity trade-offs. User-specified measurement scenarios and prescribed-speed power retain their sampling and quasi-static limits. Search provenance follows an applied comparison into its research snapshot.
+
+Added a research notebook with distinct evidence categories, scoped citations, immutable joint/compound/machine source snapshots, editing, recovery and portable import/export. Source capture flushes current workbench values; restoring a compound or machine source opens its workspace and preserves replaced data. Unsaved note forms and unapplied machine-curve edits block workspace export/restore and managed update reload until resolved. Per-exercise working drafts and view framing persist. Whole-workspace backup joins comparison/library data, drafts, machine/compound workspaces, saved research notes, favorites and training-list resolutions, with validated restore previews and recovery copies.
+
+Updated the guides around counterfactual comparisons, measurement and uncertainty. The scientific question remains which mechanical conclusion the inputs support and what evidence would change it. No external-load curve is promoted to a muscle-force or hypertrophy result. Browser/PWA delivery remains the chosen architecture; native packaging and automatic cloud synchronization are not promised.
+
+The entries below record earlier milestones and decisions; they do not define the current catalog limit. Actual verification and hosted-delivery status are recorded separately in [VERIFICATION.md](docs/VERIFICATION.md).
+
+
 ## 28 October 2026 — Exercise Biomechanics Lab
 
 The pullover comparator now supports the handoff's twelve exercise scenarios through six mechanical families. Elbow curls/extensions, shoulder raises/flyes and ankle-loaded hip extension use their own motion paths, coordinates and load application points. The unknown-machine illustration remains explicitly non-quantitative.
