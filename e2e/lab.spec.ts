@@ -1,0 +1,182 @@
+import { test, expect, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { createInitialState, STORAGE_KEY, type LabState } from '../src/state';
+
+const stateInBrowser = (page: Page) => page.evaluate(key => {
+  const stored = localStorage.getItem(key);
+  try { return stored ? JSON.parse(stored) as LabState : null; } catch { return null; }
+}, STORAGE_KEY);
+const input = (page: Page, label: string) => page.getByRole('spinbutton', { name: `${label} value`, exact: true });
+const panel = (page: Page, side: 'A' | 'B') => page.getByRole('article', { name: `Configuration ${side}`, exact: true });
+async function imported(page: Page, state: unknown) {
+  await page.locator('input[type=file]').setInputFiles({ name: 'comparison.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(state)) });
+}
+async function openGroup(page: Page, side: 'A' | 'B', title: string) {
+  await page.locator(`.settings-card.setup-${side.toLowerCase()} summary`).filter({ hasText: title }).click();
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('A different setup.');
+});
+
+test('renders comparable scenes, responsive controls and a readable curve without runtime errors', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.reload();
+  await expect(panel(page, 'A')).toBeVisible();
+  await expect(panel(page, 'B')).toBeVisible();
+  await expect(panel(page, 'A').locator('.moment')).toHaveText('+67.3 N·m');
+  await expect(panel(page, 'B').locator('.moment')).toHaveText('+127.5 N·m');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Top view', exact: true }).click();
+  await expect(page.locator('.scene-top')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Side view', exact: true }).click();
+  await expect(page.locator('.scene-side')).toHaveCount(2);
+  const chart = page.locator('.curve-svg');
+  await chart.scrollIntoViewIfNeeded();
+  await chart.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(input(page, 'Arm elevation relative to torso')).toHaveValue('159');
+  expect(await chart.locator('text').first().evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(9);
+  expect(errors).toEqual([]);
+});
+
+test('keeps setup edits independent and implements angle, progress and independent synchronization', async ({ page }) => {
+  await input(page, 'A · Pulley height').fill('190');
+  await expect(input(page, 'B · Pulley height')).toHaveValue('135');
+  await page.getByLabel('Synchronization mode').selectOption('independent');
+  await input(page, 'A · Arm elevation').fill('120');
+  await input(page, 'B · Arm elevation').fill('170');
+  await expect(input(page, 'A · Arm elevation')).toHaveValue('120');
+  await page.getByLabel('Synchronization mode').selectOption('angle');
+  await expect.poll(async () => (await stateInBrowser(page))?.angles).toEqual([120, 120]);
+  await page.getByLabel('Synchronization mode').selectOption('progress');
+  await input(page, 'Arm elevation relative to torso').fill('115');
+  await expect.poll(async () => (await stateInBrowser(page))?.angles).toEqual([115, 135]);
+  await expect(page.getByText('Equal progress does not mean equal joint angles.')).toBeVisible();
+});
+
+test('height updates unmeasured dimensions while preserving measurements and equipment', async ({ page }) => {
+  await openGroup(page, 'A', 'Body profile');
+  await input(page, 'A · Upper arm').fill('37');
+  await input(page, 'A · Standing height').fill('190');
+  await expect(input(page, 'A · Upper arm')).toHaveValue('37');
+  await expect(input(page, 'A · Forearm')).toHaveValue('29.314');
+  await expect(input(page, 'B · Pulley height')).toHaveValue('135');
+  await expect(input(page, 'B · Pelvis height')).toHaveValue('46');
+  await expect.poll(async () => (await stateInBrowser(page))?.profiles[0].provenance.upperArm).toBe('measured');
+  const state = (await stateInBrowser(page))!;
+  expect(state.profiles[0]).toEqual(state.profiles[1]);
+  await page.getByRole('checkbox', { name: 'Same body', exact: true }).uncheck();
+  await input(page, 'A · Upper arm').fill('39');
+  await expect.poll(async () => (await stateInBrowser(page))?.profiles[0].values.upperArm).toBe(.39);
+  expect((await stateInBrowser(page))?.profiles[1].values.upperArm).toBe(.37);
+});
+
+test('distinguishes assistive cable action from zero applied force and keeps return labels stable', async ({ page }) => {
+  await page.getByLabel('Configuration A preset').selectOption('inside-upright');
+  await input(page, 'Arm elevation relative to torso').fill('180');
+  await expect(panel(page, 'A').locator('.status')).toHaveText('Assists the pull');
+  await expect(panel(page, 'A').locator('.moment')).toHaveText('-105.9 N·m');
+  await input(page, 'A · Force per cable').fill('0');
+  await expect(panel(page, 'A').locator('.status')).toContainText('No cable force');
+  await expect(panel(page, 'A').locator('.moment')).toHaveText('0.0 N·m');
+  await page.getByRole('button', { name: 'Play animation', exact: true }).click();
+  await expect(input(page, 'Arm elevation relative to torso')).not.toHaveValue('180');
+  await expect(panel(page, 'A').locator('.status')).toContainText('No cable force');
+  await page.getByRole('button', { name: 'Pause animation', exact: true }).click();
+});
+
+test('copies, swaps and undoes full setups with their corresponding results', async ({ page }) => {
+  await page.getByRole('button', { name: 'Copy A → B', exact: true }).click();
+  await expect(panel(page, 'B').locator('.moment')).toHaveText('+67.3 N·m');
+  await input(page, 'B · Pulley height').fill('180');
+  await page.getByRole('button', { name: 'Swap A ⇄ B', exact: true }).click();
+  await expect(input(page, 'A · Pulley height')).toHaveValue('180');
+  await expect(input(page, 'B · Pulley height')).toHaveValue('225');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(input(page, 'A · Pulley height')).toHaveValue('225');
+  await expect(input(page, 'B · Pulley height')).toHaveValue('180');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(input(page, 'A · Pulley height')).toHaveValue('180');
+});
+
+test('saves, reloads and reproduces an exported comparison in empty browser storage', async ({ page }) => {
+  await page.getByLabel('Comparison name').fill('Overhead setup trial');
+  await input(page, 'A · Pulley height').fill('205');
+  await page.getByRole('checkbox', { name: 'Same force per cable' }).check();
+  await input(page, 'A · Force per cable').fill('130');
+  await expect.poll(async () => (await stateInBrowser(page))?.setups[1].tension).toBe(130);
+  const expected = await stateInBrowser(page);
+  await page.reload();
+  await expect(page.getByLabel('Comparison name')).toHaveValue('Overhead setup trial');
+  await expect(input(page, 'A · Pulley height')).toHaveValue('205');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '↓ Export', exact: true }).click();
+  const download = await downloadPromise;
+  const snapshot = JSON.parse(await readFile((await download.path())!, 'utf8'));
+  expect(snapshot).toEqual(expected);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await imported(page, snapshot);
+  await expect(page.getByRole('status')).toContainText('Comparison imported.');
+  await expect.poll(() => stateInBrowser(page)).toEqual(expected);
+  await imported(page, { version: 999 });
+  await expect(page.getByRole('status')).toContainText('Import failed:');
+  expect(await stateInBrowser(page)).toEqual(expected);
+});
+
+test('preserves an unreadable saved snapshot until explicit backup and recovery', async ({ page }) => {
+  await page.addInitScript(key => localStorage.setItem(key, '{older or damaged snapshot'), STORAGE_KEY);
+  await page.reload();
+  await expect(page.getByText('The previous saved data could not be restored and has been preserved.', { exact: false })).toBeVisible();
+  await input(page, 'A · Pulley height').fill('200');
+  // Wait beyond the autosave debounce to prove failed loading does not overwrite the original.
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(key => localStorage.getItem(key), STORAGE_KEY)).toBe('{older or damaged snapshot');
+  await page.getByRole('button', { name: 'Back up previous data & enable saving' }).click();
+  await expect.poll(async () => (await stateInBrowser(page))?.setups[0].pulleyHeight).toBe(2);
+  const backups = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('exercise-biomechanics-lab.recovery.')).map(key => localStorage.getItem(key)));
+  expect(backups).toEqual(['{older or damaged snapshot']);
+});
+
+test('suppresses direct cable moments after spatial backrest contact', async ({ page }) => {
+  const state = createInitialState();
+  state.setups[1] = { ...state.setups[1], tilt: 90, hipX: 1, pulleyHeight: .5, backWidth: .34 };
+  state.angles = [140, 140];
+  await imported(page, state);
+  await expect(panel(page, 'B').locator('.status')).not.toHaveText('Backrest contact');
+  state.setups[1].backWidth = 1.5;
+  await imported(page, state);
+  await expect(panel(page, 'B').locator('.status')).toContainText('Backrest contact');
+  await expect(panel(page, 'B').locator('.moment')).toHaveText('— N·m');
+  await page.getByRole('button', { name: 'Top view', exact: true }).click();
+  await expect(panel(page, 'B').locator('.scene-top')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'A limit changes the story.' })).toBeVisible();
+});
+
+test('accepts natural sequential numeric typing including negative positions', async ({ page }) => {
+  await openGroup(page, 'A', 'Body profile');
+  const upperArm = input(page, 'A · Upper arm');
+  await upperArm.fill('');
+  await upperArm.pressSequentially('37');
+  await expect(upperArm).toHaveValue('37');
+  await upperArm.press('Tab');
+  await expect.poll(async () => (await stateInBrowser(page))?.profiles[0].values.upperArm).toBe(.37);
+
+  const height = input(page, 'A · Standing height');
+  await height.fill('');
+  await height.pressSequentially('190');
+  await expect(height).toHaveValue('190');
+  await height.press('Tab');
+  await expect.poll(async () => (await stateInBrowser(page))?.profiles[0].values.height).toBe(1.9);
+  await expect(upperArm).toHaveValue('37');
+
+  const pelvis = input(page, 'A · Pelvis to pulley plane');
+  await pelvis.fill('');
+  await pelvis.pressSequentially('-35');
+  await expect(pelvis).toHaveValue('-35');
+  await pelvis.press('Tab');
+  await expect.poll(async () => (await stateInBrowser(page))?.setups[0].hipX).toBe(-.35);
+});
