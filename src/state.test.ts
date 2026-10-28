@@ -10,6 +10,9 @@ import {
   sharedRange,
   STORAGE_KEY,
   validateState,
+  regenerateEstimates,
+  parseComparison,
+  forceValue,
 } from "./state";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -167,5 +170,129 @@ describe("movement comparison modes", () => {
     expect(next.angles[0]).toBe(90);
     expect(next.angles[1]).toBe(state.angles[1]);
     expect(state.angles[0]).not.toBe(90);
+  });
+});
+
+describe('expanded exercise state and migrations', () => {
+  it('preserves explicit bar length and compares implicit defaults by physical equipment span', () => {
+    const state = createInitialState();
+    state.setups[1] = structuredClone(state.setups[0]);
+    state.lockEquipment = true;
+    state.setups[1].barLength = Math.max(0.6, state.setups[0].attachmentSpacing + 0.08);
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    state.setups[1].barLength += 0.05;
+    expect(() => validateState(state)).toThrow('Same-equipment');
+    state.lockEquipment = false;
+    state.setups[1].barLength = 3.01;
+    expect(() => validateState(state)).toThrow('barLength');
+    state.setups[1].barLength = Infinity;
+    expect(() => validateState(state)).toThrow('barLength');
+  });
+  it('uses explicitly supplied leg masses for hip segment gravity and retains them through export', () => {
+    const state = createInitialState();
+    state.sync = 'independent';
+    state.setups[0] = { ...state.setups[0], model: 'hip', range: [-20, 60], segmentGravity: true, thighMass: 4.5, shankMass: 2.1 };
+    state.angles[0] = 20;
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    state.setups[0].thighMass = undefined;
+    state.setups[0].upperArmMass = 4.5;
+    state.setups[0].forearmMass = 2.1;
+    expect(() => validateState(state)).toThrow('thigh and lower-leg masses');
+    state.setups[0].thighMass = 4.5;
+    state.setups[0].shankMass = undefined;
+    expect(() => validateState(state)).toThrow('thigh and lower-leg masses');
+    for (const invalid of [-1, 51, NaN, Infinity]) {
+      state.setups[0].shankMass = invalid;
+      expect(() => validateState(state)).toThrow('shankMass');
+    }
+    state.setups[0].shankMass = 0;
+    state.setups[0].thighMass = 0;
+    expect(validateState(state).setups[0].thighMass).toBe(0);
+  });
+  it('keeps undefined load mass or transmission distinct from a known zero force', () => {
+    const setup = createInitialState().setups[0];
+    expect(forceValue({ ...setup, resistance: 'dumbbell', loadMass: undefined })).toBeNull();
+    expect(forceValue({ ...setup, loadMode: 'mass', loadMass: undefined, transmissionFactor: 1 })).toBeNull();
+    expect(forceValue({ ...setup, loadMode: 'mass', loadMass: 20, transmissionFactor: undefined })).toBeNull();
+    expect(forceValue({ ...setup, loadMode: 'mass', loadMass: 20, transmissionFactor: 0 })).toBe(0);
+    expect(forceValue({ ...setup, resistance: 'dumbbell', loadMass: 0 })).toBe(0);
+  });
+  it('preserves all declared model, load, comparison and profile fields on export', () => {
+    const state = createInitialState();
+    state.sync = 'independent';
+    state.setups[0] = { ...state.setups[0], range: [0, 140], model: 'curl', resistance: 'cable', loadMode: 'mass', loadMass: 20, transmissionFactor: 0.5, upperArmAngle: 15, planeOffset: 0.2, posture: 'standing', gripWidth: 0.42, slack: false, forceKnown: true, segmentGravity: true, upperArmMass: 2, forearmMass: 1.5 };
+    state.angles[0] = 90;
+    state.comparisonMode = 'controlled'; state.criterion = 'Resistance above 90°'; state.region = [90, 130];
+    state.notes = 'Measured cable force'; state.observation = 'Supported pose felt more repeatable.';
+    state.profiles[0] = editMeasurement(state.profiles[0], 'shank', 0.46);
+    state.lockBody = false;
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    expect(forceValue(state.setups[0])).toBeCloseTo(98.1);
+    state.setups[0].transmissionFactor = NaN;
+    expect(() => validateState(state)).toThrow('transmissionFactor');
+  });
+  it('does not compare incompatible coordinates at the same angle, but synchronizes their action progress', () => {
+    let state = createInitialState();
+    state.setups[0].range = [20, 180];
+    state.setups[1] = { ...state.setups[1], model: 'curl', range: [0, 140] };
+    expect(sharedRange(state)).toBeNull();
+    expect(() => setAngle(state, 0, 100)).toThrow('coordinates differ');
+    state.sync = 'progress';
+    state = setAngle(state, 0, 140); // 25% through decreasing pullover elevation.
+    expect(state.angles).toEqual([140, 35]); // 25% through increasing elbow flexion.
+    expect(validateState(state).sync).toBe('progress');
+  });
+  it('regenerates only unmeasured, unlocked estimates, including lower-body dimensions', () => {
+    let profile = createInitialState().profiles[0];
+    profile = editMeasurement(profile, 'thigh', 0.48);
+    profile.locked.foot = true;
+    const foot = profile.values.foot;
+    profile.values.height = 2;
+    const regenerated = regenerateEstimates(profile);
+    expect(regenerated.values.thigh).toBe(0.48);
+    expect(regenerated.values.foot).toBe(foot);
+    expect(regenerated.values.shank).toBeCloseTo(0.43 * 2 / 1.75);
+    expect(regenerated.provenance.shank).toBe('estimated');
+    expect(profile.provenance.shank).toBe('example');
+  });
+  it('migrates an original pullover snapshot while preserving its exact source before saving', () => {
+    const old = JSON.parse(JSON.stringify(createInitialState()));
+    old.modelVersion = 'pullover-1';
+    for (const profile of old.profiles) for (const key of ['thigh', 'shank', 'foot', 'pelvisWidth', 'headNeck']) {
+      delete profile.values[key]; delete profile.provenance[key]; delete profile.locked[key];
+    }
+    const original = JSON.stringify(old);
+    const memory = new Map([[STORAGE_KEY, original]]);
+    vi.stubGlobal('localStorage', { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value) });
+    const migrated = loadState();
+    expect(migrated.state.modelVersion).toBe(MODEL_VERSION);
+    expect(migrated.state.profiles[0].provenance.thigh).toBe('estimated');
+    expect(migrated.error).toContain('Review the recalculated results');
+    expect(memory.get(STORAGE_KEY)).toBe(original);
+    expect(memory.get(migrated.backupKey!)).toBe(original);
+    expect(saveState(migrated.state)).toBe(true);
+    expect(memory.get(migrated.backupKey!)).toBe(original);
+    expect(JSON.parse(memory.get(STORAGE_KEY)!).modelVersion).toBe(MODEL_VERSION);
+  });
+  it('refuses an overwrite if preserving the old-model backup fails', () => {
+    const original = JSON.stringify({ ...createInitialState(), modelVersion: 'pullover-1' });
+    const written: string[] = [];
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === STORAGE_KEY ? original : null, setItem: (key: string) => { written.push(key); throw new Error('Quota'); } });
+    expect(saveState(createInitialState())).toBe(false);
+    expect(written).not.toContain(STORAGE_KEY);
+  });
+  it('preserves malformed existing data before an explicit replacement save', () => {
+    for (const original of ['null', '{broken', JSON.stringify({ modelVersion: MODEL_VERSION, version: 1 })]) {
+      const memory = new Map([[STORAGE_KEY, original]]);
+      vi.stubGlobal('localStorage', { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value) });
+      expect(saveState(createInitialState())).toBe(true);
+      expect(memory.get(`${STORAGE_KEY}.model-backup`)).toBe(original);
+    }
+  });
+  it('does not replace a partially supplied measured segment with an estimate', () => {
+    const state = JSON.parse(JSON.stringify(createInitialState()));
+    delete state.profiles[0].values.thigh;
+    state.profiles[0].provenance.thigh = 'measured';
+    expect(() => validateState(state)).toThrow('dimension, provenance, and lock together');
   });
 });

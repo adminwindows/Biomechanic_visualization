@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/generate-sw.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run src",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:pwa": "playwright test --config playwright.offline.config.ts"
   },
   "dependencies": {
     "react": "^19.2.0",

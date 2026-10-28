@@ -10,6 +10,13 @@ import {
   dot,
   evaluate,
   geometry,
+  getDefinition,
+  getTension,
+  compatible,
+  solveKnee,
+  ANKLE_HEIGHT,
+  BAR_RADIUS,
+  contactAngles,
   length,
   presets,
   sampleCurve,
@@ -154,6 +161,276 @@ describe("analytical force and moment fixtures from handoff §13", () => {
   });
 });
 
+const presetById = (id: string): Setup => {
+  const preset = presets.find((item) => item.preset === id);
+  if (!preset) throw new Error(`Missing exercise preset ${id}`);
+  return preset;
+};
+
+describe("independent analytical fixtures for the six exercise families", () => {
+  function verticallyLoaded(setup: Setup, angle: number): Setup {
+    const pose = geometry(setup, defaultProfile, angle);
+    return {
+      ...setup,
+      planeOffset: pose.hand[0],
+      outletSpacing: 2 * pose.hand[1],
+      pulleyHeight: pose.hand[2] - 0.8,
+      tension: 100,
+    };
+  }
+
+  it("calculates an elbow curl about the elbow rather than the shoulder", () => {
+    const base = { ...presetById("curl-low"), upperArmAngle: 0, tilt: 0 };
+    const setup = verticallyLoaded(base, 90);
+    const result = evaluate(setup, defaultProfile, 90);
+    expect(result.status).toBe("resists");
+    expect(result.moment).toBeCloseTo(100 * (defaultProfile.forearm + defaultProfile.hand), 9);
+    closeVector(result.geometry.jointOrigin!, result.geometry.elbow);
+    const lower = geometry(setup, defaultProfile, 20);
+    const upper = geometry(setup, defaultProfile, 120);
+    closeVector(lower.elbow, upper.elbow);
+    expect(lower.hand).not.toEqual(upper.hand);
+  });
+
+  it("changes shoulder posture in a Bayesian curl while keeping an elbow-only motion", () => {
+    const low = geometry(presetById("curl-low"), defaultProfile, 80);
+    const bayesian = geometry(presetById("curl-bayesian"), defaultProfile, 80);
+    const armA = sub(low.elbow, low.shoulders[1]);
+    const armB = sub(bayesian.elbow, bayesian.shoulders[1]);
+    expect(armA[0]).toBeCloseTo(0, 9);
+    expect(armB[0]).toBeLessThan(0);
+    expect(length(armA)).toBeCloseTo(length(armB), 9);
+    const extended = geometry(presetById("curl-bayesian"), defaultProfile, 10);
+    closeVector(extended.elbow, bayesian.elbow);
+  });
+
+  it("distinguishes gravity assisting upright extension from resisting overhead extension", () => {
+    const upright = verticallyLoaded({ ...presetById("extension-pushdown"), facing: 1, upperArmAngle: 0, tilt: 0 }, 90);
+    const overhead = verticallyLoaded({ ...presetById("extension-overhead"), upperArmAngle: 180, tilt: 0 }, 90);
+    const magnitude = 100 * (defaultProfile.forearm + defaultProfile.hand);
+    expect(evaluate(upright, defaultProfile, 90)).toMatchObject({ status: "assists" });
+    expect(evaluate(upright, defaultProfile, 90).moment).toBeCloseTo(-magnitude, 9);
+    expect(evaluate(overhead, defaultProfile, 90)).toMatchObject({ status: "resists" });
+    expect(evaluate(overhead, defaultProfile, 90).moment).toBeCloseTo(magnitude, 9);
+  });
+
+  it.each([0, 30, 90, 120])("matches unilateral dumbbell leverage at %s° without doubling it", (angle) => {
+    const setup: Setup = { ...presetById("raise-dumbbell"), tilt: 0, elbow: 0, loadMass: 5 };
+    const result = evaluate(setup, defaultProfile, angle);
+    const reach = defaultProfile.upperArm + defaultProfile.forearm + defaultProfile.hand;
+    expect(result.moment).toBeCloseTo(5 * 9.81 * reach * Math.sin(angle * RAD), 9);
+    expect(result.cableMoment).toBe(0);
+    expect(result.geometry.cables).toHaveLength(0);
+    expect(result.geometry.loads?.filter((load) => load.kind === "gravity")).toHaveLength(1);
+  });
+
+  it("rotates the gravity lever with prescribed frontal torso lean", () => {
+    const setup: Setup = { ...presetById("raise-dumbbell"), tilt: 25, elbow: 0, loadMass: 5 };
+    const reach = defaultProfile.upperArm + defaultProfile.forearm + defaultProfile.hand;
+    expect(evaluate(setup, defaultProfile, 70).moment).toBeCloseTo(5 * 9.81 * reach * Math.sin(45 * RAD), 9);
+  });
+
+  it("uses a lateral-raise axis consistent with its hand derivative and segment gravity", () => {
+    const setup: Setup = {
+      ...presetById("raise-dumbbell"), tilt: 0, elbow: 0, loadMass: 0,
+      segmentGravity: true, upperArmMass: 3, forearmMass: 2,
+    };
+    const result = evaluate(setup, defaultProfile, 90);
+    const g = result.geometry;
+    closeVector(cross(g.jointAxis!, sub(g.hand, g.jointOrigin!)), g.handDerivative);
+    const distalReach = defaultProfile.forearm + defaultProfile.hand;
+    const expected = 9.81 * (3 * defaultProfile.upperArm / 2 + 2 * (defaultProfile.upperArm + distalReach / 2));
+    expect(result.gravityMoment).toBeCloseTo(expected, 9);
+    expect(result.moment).toBeCloseTo(expected, 9);
+    expect(result.status).toBe("resists");
+  });
+
+  it("keeps front/back cable placement distinct from the frontal arm path", () => {
+    const base = presetById("raise-cable");
+    const front = geometry({ ...base, planeOffset: base.hipX + 0.4 }, defaultProfile, 60);
+    const behind = geometry({ ...base, planeOffset: base.hipX - 0.4 }, defaultProfile, 60);
+    closeVector(front.hand, behind.hand);
+    expect(front.cables).toHaveLength(1);
+    expect(front.cables[0].force![0]).toBeGreaterThan(0);
+    expect(behind.cables[0].force![0]).toBeLessThan(0);
+  });
+
+  it("sums two independent fly handles using mirrored derivatives", () => {
+    const reach = defaultProfile.upperArm + defaultProfile.forearm + defaultProfile.hand;
+    const setup: Setup = {
+      ...presetById("fly-cable"), elbow: 0, tilt: 0, tension: 100,
+      planeOffset: -0.25, outletSpacing: defaultProfile.shoulderWidth + 2 * reach,
+      pulleyHeight: 0.90 + defaultProfile.torso,
+    };
+    const result = evaluate(setup, defaultProfile, 0);
+    expect(result.moment).toBeCloseTo(2 * 100 * reach, 9);
+    expect(result.geometry.cables).toHaveLength(2);
+    expect(result.geometry.hasBar).toBe(false);
+    const epsilon = 1e-6;
+    const current = geometry(setup, defaultProfile, 45);
+    const before = geometry(setup, defaultProfile, 45 - epsilon / RAD);
+    const after = geometry(setup, defaultProfile, 45 + epsilon / RAD);
+    for (let side = 0; side < 2; side++) {
+      const independentlyDifferentiated = scale(sub(after.cables[side].attachment, before.cables[side].attachment), 1 / (2 * epsilon));
+      closeVector(current.cables[side].derivative!, independentlyDifferentiated, 7);
+    }
+    expect(current.cables[0].derivative![1]).toBeGreaterThan(0);
+    expect(current.cables[1].derivative![1]).toBeLessThan(0);
+    expect(current.cables[0].derivative![0]).toBeCloseTo(current.cables[1].derivative![0], 9);
+  });
+
+  it("loads the ankle in hip extension and preserves a valid grounded stance", () => {
+    const base = presetById("hip-extension");
+    const pose = geometry(base, defaultProfile, 0);
+    const setup: Setup = { ...base, pulleyHeight: pose.hand[2], planeOffset: pose.hand[0] - 1, tension: 100 };
+    const result = evaluate(setup, defaultProfile, 0);
+    expect(result.status).toBe("resists");
+    expect(result.geometry.supportValid).toBe(true);
+    expect(result.moment).toBeCloseTo(100 * (defaultProfile.thigh! + defaultProfile.shank!), 9);
+    const loadedShank = result.geometry.limbs!.find((limb) => limb.kind === "shank" && limb.to[1] > 0)!;
+    closeVector(result.geometry.cables[0].attachment, loadedShank.to);
+    expect(result.geometry.supportPoints).toHaveLength(1);
+  });
+
+  it("keeps curve coordinates and force conventions compatible only where defined", () => {
+    expect(compatible(presetById("raise-cable"), presetById("raise-dumbbell"))).toBe(true);
+    expect(compatible(classic, presetById("curl-low"))).toBe(false);
+    expect(compatible(presetById("curl-low"), presetById("extension-pushdown"))).toBe(false);
+    expect(compatible(presetById("machine-unknown"), presetById("machine-unknown"))).toBe(false);
+    const requiredFamilies = ["pullover", "curl", "extension", "raise", "fly", "hip"];
+    expect([...new Set(presets.map((preset) => getDefinition(preset).id))]).toEqual(expect.arrayContaining(requiredFamilies));
+  });
+});
+
+describe("support constraints and independent load states", () => {
+  it.each([
+    "classic", "outside", "inside", "bench", "curl-low", "curl-bayesian",
+    "extension-pushdown", "extension-overhead", "raise-cable", "raise-dumbbell",
+    "fly-cable", "hip-extension",
+  ])("provides a usable numerical starting pose for release scenario %s", (id) => {
+    const setup = presetById(id);
+    const result = evaluate(setup, defaultProfile, (setup.range[0] + setup.range[1]) / 2);
+    expect(["resists", "assists", "near-zero"]).toContain(result.status);
+    expect(Number.isFinite(result.moment)).toBe(true);
+    expect(result.geometry.supportValid).toBe(true);
+    expect(result.metricLabel).toBeTruthy();
+    expect(result.referenceAction).toBe(getDefinition(setup).action);
+  });
+
+  it("solves a wider rigid-bar grip while preserving lengths and the true elbow bend", () => {
+    const setup: Setup = { ...classic, elbow: 40, gripWidth: 0.64 };
+    const distalLength = defaultProfile.forearm + defaultProfile.hand;
+    for (const angle of [40, 130, 185]) {
+      const g = geometry(setup, defaultProfile, angle);
+      expect(g.gripCompatible).toBe(true);
+      expect(g.grips[1][1] - g.grips[0][1]).toBeCloseTo(setup.gripWidth!, 9);
+      for (let side = 0; side < 2; side++) {
+        const upper = sub(g.elbows[side], g.shoulders[side]);
+        const distal = sub(g.grips[side], g.elbows[side]);
+        expect(length(upper)).toBeCloseTo(defaultProfile.upperArm, 9);
+        expect(length(distal)).toBeCloseTo(distalLength, 9);
+        expect(dot(upper, distal) / (length(upper) * length(distal))).toBeCloseTo(Math.cos(setup.elbow * RAD), 9);
+        expect(g.grips[side][0]).toBeCloseTo(g.barEnds[0][0], 9);
+        expect(g.grips[side][2]).toBeCloseTo(g.barEnds[0][2], 9);
+      }
+    }
+    const epsilon = 1e-6;
+    const current = geometry(setup, defaultProfile, 130);
+    const before = geometry(setup, defaultProfile, 130 - epsilon / RAD);
+    const after = geometry(setup, defaultProfile, 130 + epsilon / RAD);
+    const cableWork = current.cables.reduce((sum, cable) => sum + dot(cable.force!, cable.derivative ?? current.handDerivative), 0);
+    const independent = current.cables.reduce((sum, _cable, i) => sum - setup.tension * (after.cables[i].length - before.cables[i].length) / (2 * epsilon), 0);
+    expect(cableWork).toBeCloseTo(independent, 5);
+  });
+
+  it("rejects a wider grip with locked straight elbows instead of stretching the arms", () => {
+    const result = evaluate({ ...classic, elbow: 0, gripWidth: 0.64 }, defaultProfile, 170);
+    expect(result).toMatchObject({ status: "invalid", moment: null });
+    expect(result.geometry.gripCompatible).toBe(false);
+    expect(result.validityReason).toMatch(/grip|Grip/);
+    for (let side = 0; side < 2; side++) {
+      expect(length(sub(result.geometry.elbows[side], result.geometry.shoulders[side]))).toBeCloseTo(defaultProfile.upperArm, 9);
+      expect(length(sub(result.geometry.grips[side], result.geometry.elbows[side]))).toBeCloseTo(defaultProfile.forearm + defaultProfile.hand, 9);
+    }
+  });
+
+  it("solves two-link support without stretching either measured segment", () => {
+    const hip: Vec3 = [0, 0, 0.8];
+    const ankle: Vec3 = [0.06, 0, ANKLE_HEIGHT];
+    const knee = solveKnee(hip, ankle, 0.43, 0.41, 1)!;
+    expect(knee).not.toBeNull();
+    expect(length(sub(knee, hip))).toBeCloseTo(0.43, 9);
+    expect(length(sub(ankle, knee))).toBeCloseTo(0.41, 9);
+    expect(solveKnee([0, 0, 1.2], ankle, 0.43, 0.41, 1)).toBeNull();
+    expect(solveKnee([0, 0, 0.08], [0, 0, 0.06], 0.5, 0.2, 1)).toBeNull();
+  });
+
+  it.each(["classic", "bench", "classic-kneeling", "hip-extension"])("preserves leg dimensions and support in the %s preset", (id) => {
+    const setup = presetById(id);
+    const g = geometry(setup, defaultProfile, (setup.range[0] + setup.range[1]) / 2);
+    expect(g.supportValid).toBe(true);
+    const legs = g.limbs!.filter((limb) => limb.kind === "thigh" || limb.kind === "shank");
+    expect(legs).toHaveLength(4);
+    for (const limb of legs) expect(length(sub(limb.to, limb.from))).toBeCloseTo(limb.kind === "thigh" ? defaultProfile.thigh! : defaultProfile.shank!, 9);
+    for (const support of g.supportPoints!) expect(support[2]).toBeCloseTo(ANKLE_HEIGHT, 9);
+  });
+
+  it("reports conflicting pelvis/leg dimensions instead of moving equipment or stretching limbs", () => {
+    const setup = presetById("curl-low");
+    const result = evaluate({ ...setup, hipHeight: 1.4 }, defaultProfile, 70);
+    expect(result).toMatchObject({ status: "invalid", moment: null, cableMoment: null, gravityMoment: null });
+    expect(result.geometry.hip[2]).toBe(1.4);
+    for (const limb of result.geometry.limbs!.filter((limb) => limb.kind === "thigh" || limb.kind === "shank")) {
+      expect(length(sub(limb.to, limb.from))).toBeCloseTo(limb.kind === "thigh" ? defaultProfile.thigh! : defaultProfile.shank!, 9);
+    }
+    expect(result.validityReason).toMatch(/incompatible/);
+  });
+
+  it("adds cable and explicitly modeled gravity contributions", () => {
+    const base = { ...presetById("curl-low"), upperArmAngle: 0 };
+    const combined = evaluate({ ...base, segmentGravity: true, upperArmMass: 2, forearmMass: 1.5 }, defaultProfile, 90);
+    const cableOnly = evaluate(base, defaultProfile, 90);
+    const gravityOnly = evaluate({ ...base, tension: 0, segmentGravity: true, upperArmMass: 2, forearmMass: 1.5 }, defaultProfile, 90);
+    const expectedGravity = 1.5 * 9.81 * (defaultProfile.forearm + defaultProfile.hand) / 2;
+    expect(combined.gravityMoment).toBeCloseTo(expectedGravity, 9);
+    expect(gravityOnly.status).toBe("resists");
+    expect(gravityOnly.cableMoment).toBe(0);
+    expect(combined.moment).toBeCloseTo(cableOnly.moment! + gravityOnly.moment!, 9);
+    expect(combined.moment).toBeCloseTo(combined.cableMoment! + combined.gravityMoment!, 9);
+  });
+
+  it("keeps known gravity visible when cable force is unknown", () => {
+    const setup: Setup = { ...presetById("curl-low"), forceKnown: false, segmentGravity: true, upperArmMass: 2, forearmMass: 1.5 };
+    const result = evaluate(setup, defaultProfile, 90);
+    expect(result).toMatchObject({ status: "unknown", moment: null, cableMoment: null });
+    expect(result.gravityMoment).toBeGreaterThan(0);
+    expect(result.outputLevel).toBe("geometry");
+  });
+
+  it("distinguishes explicitly slack, known zero force and unknown tension", () => {
+    const setup = presetById("curl-low");
+    expect(evaluate({ ...setup, slack: true }, defaultProfile, 80)).toMatchObject({ status: "slack", moment: 0, cableMoment: 0 });
+    expect(evaluate({ ...setup, tension: 0 }, defaultProfile, 80)).toMatchObject({ status: "no-force", moment: 0, cableMoment: 0 });
+    expect(evaluate({ ...setup, forceKnown: false }, defaultProfile, 80)).toMatchObject({ status: "unknown", moment: null, cableMoment: null });
+    expect(evaluate({ ...setup, slack: true, segmentGravity: true, upperArmMass: 2, forearmMass: 1.5 }, defaultProfile, 90)).toMatchObject({ status: "resists", cableMoment: 0 });
+  });
+
+  it("does not invent an unknown machine profile or missing load masses", () => {
+    expect(evaluate(presetById("machine-unknown"), defaultProfile, 120)).toMatchObject({ status: "unknown", moment: null, cableMoment: null, outputLevel: "geometry" });
+    expect(evaluate({ ...presetById("raise-dumbbell"), loadMass: undefined }, defaultProfile, 70)).toMatchObject({ status: "unknown", moment: null, gravityMoment: null });
+    expect(evaluate({ ...presetById("curl-low"), segmentGravity: true }, defaultProfile, 70)).toMatchObject({ status: "unknown", moment: null, gravityMoment: null });
+  });
+
+  it("converts a declared mass/transmission once, and keeps missing ratios unknown", () => {
+    const setup: Setup = { ...presetById("curl-low"), loadMode: "mass", loadMass: 20, transmissionFactor: 0.5 };
+    expect(getTension(setup)).toBeCloseTo(98.1, 9);
+    const fromMass = evaluate(setup, defaultProfile, 80);
+    const fromForce = evaluate({ ...setup, loadMode: "force", tension: 98.1 }, defaultProfile, 80);
+    expect(fromMass.moment).toBeCloseTo(fromForce.moment!, 9);
+    expect(evaluate({ ...setup, transmissionFactor: undefined }, defaultProfile, 80)).toMatchObject({ status: "unknown", moment: null });
+  });
+});
+
 describe("pullover pose and generalized contribution", () => {
   it("matches independent finite-difference cable work for every preset and bent elbows", () => {
     const epsilon = 1e-6; // radians; do not differentiate per degree and label the result N·m
@@ -164,7 +441,7 @@ describe("pullover pose and generalized contribution", () => {
         const before = geometry(setup, defaultProfile, angle - epsilon / RAD);
         const after = geometry(setup, defaultProfile, angle + epsilon / RAD);
         const generalized = current.cables.reduce(
-          (sum, cable) => sum + dot(cable.force!, current.handDerivative),
+          (sum, cable) => sum + dot(cable.force!, cable.derivative ?? current.handDerivative),
           0,
         );
         const workDerivative = current.cables.reduce(
@@ -220,10 +497,12 @@ describe("pullover pose and generalized contribution", () => {
             defaultProfile.forearm + defaultProfile.hand,
             10,
           );
-          expect(g.grips[side][0]).toBeCloseTo(g.barEnds[0][0], 10);
-          expect(g.grips[side][2]).toBeCloseTo(g.barEnds[0][2], 10);
-          expect(g.grips[side][1]).toBeGreaterThan(g.barEnds[0][1]);
-          expect(g.grips[side][1]).toBeLessThan(g.barEnds[1][1]);
+          if (g.hasBar) {
+            expect(g.grips[side][0]).toBeCloseTo(g.barEnds[0][0], 10);
+            expect(g.grips[side][2]).toBeCloseTo(g.barEnds[0][2], 10);
+            expect(g.grips[side][1]).toBeGreaterThan(g.barEnds[0][1]);
+            expect(g.grips[side][1]).toBeLessThan(g.barEnds[1][1]);
+          }
         }
       }
   });
@@ -352,6 +631,56 @@ describe("pullover pose and generalized contribution", () => {
 });
 
 describe("spatial backrest contact and curve agreement", () => {
+  it("finds a 0.075° bar-contact interval that an entire 0.5° grid misses", () => {
+    // Synthetic grazing fixture: at 196.1° the bar enters below the inflated
+    // backrest top; at 196.17496° it leaves behind its rear depth boundary.
+    const entry = 196.1;
+    const reach = defaultProfile.upperArm + defaultProfile.forearm + defaultProfile.hand;
+    const setup: Setup = {
+      ...bench, tilt: 90, hipX: 1, hipHeight: 0.46,
+      backLength: defaultProfile.torso - reach * Math.cos(entry * RAD) - BAR_RADIUS,
+      range: [195.5, 197],
+    };
+    const depthFromShoulder = 0.08 + setup.backThickness + BAR_RADIUS;
+    const exit = 180 + Math.asin(depthFromShoulder / reach) / RAD;
+    expect(exit - entry).toBeLessThan(0.08);
+    for (const angle of [195.5, 196, 196.5, 197]) {
+      expect(evaluate(setup, defaultProfile, angle).status).toBe("resists");
+    }
+    expect(evaluate(setup, defaultProfile, (entry + exit) / 2)).toMatchObject({
+      status: "contact", moment: null, contactKind: "bar–backrest",
+    });
+    const candidates = contactAngles(setup, defaultProfile);
+    expect(candidates.some((angle) => Math.abs(angle - entry) < 1e-7)).toBe(true);
+    expect(candidates.some((angle) => Math.abs(angle - exit) < 1e-7)).toBe(true);
+    const curve = sampleCurve(setup, defaultProfile);
+    const contacts = curve.filter((point) => point.status === "contact");
+    expect(contacts.length).toBeGreaterThanOrEqual(3);
+    expect(contacts[0].angle).toBeCloseTo(entry, 7);
+    expect(contacts.at(-1)!.angle).toBeCloseTo(exit, 7);
+    for (const point of curve) {
+      const evaluated = evaluate(setup, defaultProfile, point.angle);
+      expect(point.status).toBe(evaluated.status);
+      expect(point.moment).toBe(evaluated.moment);
+    }
+  });
+
+  it("retains an isolated corner tangency without inventing an interval-wide collision", () => {
+    const reach = defaultProfile.upperArm + defaultProfile.forearm + defaultProfile.hand;
+    const angle = 180 + Math.asin((0.08 + bench.backThickness + BAR_RADIUS) / reach) / RAD;
+    const setup: Setup = {
+      ...bench, tilt: 90, hipX: 1,
+      backLength: defaultProfile.torso - reach * Math.cos(angle * RAD) - BAR_RADIUS,
+      range: [195.5, 197],
+    };
+    expect(evaluate(setup, defaultProfile, angle).status).toBe("contact");
+    expect(evaluate(setup, defaultProfile, angle - 0.001).status).not.toBe("contact");
+    expect(evaluate(setup, defaultProfile, angle + 0.001).status).not.toBe("contact");
+    const contacts = sampleCurve(setup, defaultProfile).filter((point) => point.status === "contact");
+    expect(contacts.length).toBeGreaterThan(0);
+    for (const point of contacts) expect(point.angle).toBeCloseTo(angle, 6);
+  });
+
   it("distinguishes a projected crossing from real contact with a wider backrest", () => {
     const setup: Setup = { ...bench, tilt: 90, hipX: 1, pulleyHeight: 0.5 };
     const narrow = evaluate(setup, defaultProfile, 140);
@@ -437,5 +766,55 @@ describe("spatial backrest contact and curve agreement", () => {
     expect(curve[transition].angle - curve[transition - 1].angle).toBeLessThan(
       0.02,
     );
+  });
+});
+
+describe('explicit leg gravity and equipment constraints', () => {
+  it('calculates moving hip segments from supplied masses and midpoint centres', () => {
+    const preset=presets.find(item=>item.preset==='hip-extension')!;
+    const q=30;
+    const result=evaluate({...preset,tension:0,segmentGravity:true,thighMass:6,shankMass:3},defaultProfile,q);
+    const expected=9.81*Math.sin(q*RAD)*(6*defaultProfile.thigh!/2+3*(defaultProfile.thigh!+defaultProfile.shank!/2));
+    expect(result.status).toBe('resists');
+    expect(result.cableMoment).toBe(0);
+    expect(result.gravityMoment).toBeCloseTo(expected,9);
+    expect(result.moment).toBeCloseTo(expected,9);
+  });
+
+  it('adds cable and moving-leg gravity without inferring missing masses', () => {
+    const preset=presets.find(item=>item.preset==='hip-extension')!;
+    const result=evaluate({...preset,segmentGravity:true,thighMass:6,shankMass:3},defaultProfile,35);
+    expect(result.moment).toBeCloseTo(result.cableMoment!+result.gravityMoment!,9);
+    const missing=evaluate({...preset,segmentGravity:true,thighMass:6},defaultProfile,35);
+    expect(missing.status).toBe('unknown');
+    expect(missing.moment).toBeNull();
+    expect(missing.cableMoment).not.toBeNull();
+  });
+
+  it('keeps physical bar length fixed when body width changes', () => {
+    const setup={...presets[0],elbow:30};
+    const before=geometry(setup,defaultProfile,150);
+    const after=geometry(setup,{...defaultProfile,shoulderWidth:0.55},150);
+    expect(length(sub(after.barEnds[1],after.barEnds[0]))).toBeCloseTo(length(sub(before.barEnds[1],before.barEnds[0])),10);
+    const invalid=evaluate({...setup,barLength:0.35},defaultProfile,150);
+    expect(invalid.status).toBe('invalid');
+    expect(invalid.moment).toBeNull();
+  });
+
+  it('does not assert a straight-line route for a slack cable', () => {
+    const setup:Setup={...presets[1],tilt:90,hipX:1,pulleyHeight:0.5,backWidth:1.5};
+    expect(evaluate(setup,defaultProfile,140).status).toBe('contact');
+    const slack=evaluate({...setup,slack:true,forceKnown:false},defaultProfile,140);
+    expect(slack.status).toBe('slack');
+    expect(slack.moment).toBe(0);
+  });
+
+  it('rejects a cable-count setting that the named family cannot represent', () => {
+    for(const id of ['raise-cable','hip-extension']) {
+      const preset=presets.find(item=>item.preset===id)!;
+      expect(evaluate({...preset,cables:2},defaultProfile,30).status).toBe('invalid');
+    }
+    const fly=presets.find(item=>item.preset==='fly-cable')!;
+    expect(evaluate({...fly,cables:1},defaultProfile,30).status).toBe('invalid');
   });
 });

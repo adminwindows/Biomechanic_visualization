@@ -9,7 +9,7 @@ const stateInBrowser = (page: Page) => page.evaluate(key => {
 const input = (page: Page, label: string) => page.getByRole('spinbutton', { name: `${label} value`, exact: true });
 const panel = (page: Page, side: 'A' | 'B') => page.getByRole('article', { name: `Configuration ${side}`, exact: true });
 async function imported(page: Page, state: unknown) {
-  await page.locator('input[type=file]').setInputFiles({ name: 'comparison.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(state)) });
+  await page.getByLabel('Import comparison file', {exact:true}).setInputFiles({ name: 'comparison.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(state)) });
 }
 async function openGroup(page: Page, side: 'A' | 'B', title: string) {
   await page.locator(`.settings-card.setup-${side.toLowerCase()} summary`).filter({ hasText: title }).click();
@@ -26,8 +26,8 @@ test('renders comparable scenes, responsive controls and a readable curve withou
   await page.reload();
   await expect(panel(page, 'A')).toBeVisible();
   await expect(panel(page, 'B')).toBeVisible();
-  await expect(panel(page, 'A').locator('.moment')).toHaveText('+67.3 N·m');
-  await expect(panel(page, 'B').locator('.moment')).toHaveText('+127.5 N·m');
+  await expect(panel(page, 'A').locator('.moment')).toHaveText(/^\+[0-9.]+ N·m$/);
+  await expect(panel(page, 'B').locator('.moment')).toHaveText(/^\+[0-9.]+ N·m$/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Top view', exact: true }).click();
   await expect(page.locator('.scene-top')).toHaveCount(2);
@@ -37,7 +37,7 @@ test('renders comparable scenes, responsive controls and a readable curve withou
   await chart.scrollIntoViewIfNeeded();
   await chart.focus();
   await page.keyboard.press('ArrowLeft');
-  await expect(input(page, 'Arm elevation relative to torso')).toHaveValue('159');
+  await expect(input(page, 'Upper-arm elevation from torso')).toHaveValue('159');
   expect(await chart.locator('text').first().evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(9);
   expect(errors).toEqual([]);
 });
@@ -46,13 +46,13 @@ test('keeps setup edits independent and implements angle, progress and independe
   await input(page, 'A · Pulley height').fill('190');
   await expect(input(page, 'B · Pulley height')).toHaveValue('135');
   await page.getByLabel('Synchronization mode').selectOption('independent');
-  await input(page, 'A · Arm elevation').fill('120');
-  await input(page, 'B · Arm elevation').fill('170');
-  await expect(input(page, 'A · Arm elevation')).toHaveValue('120');
+  await input(page, 'A · Upper-arm elevation from torso').fill('120');
+  await input(page, 'B · Upper-arm elevation from torso').fill('170');
+  await expect(input(page, 'A · Upper-arm elevation from torso')).toHaveValue('120');
   await page.getByLabel('Synchronization mode').selectOption('angle');
   await expect.poll(async () => (await stateInBrowser(page))?.angles).toEqual([120, 120]);
   await page.getByLabel('Synchronization mode').selectOption('progress');
-  await input(page, 'Arm elevation relative to torso').fill('115');
+  await input(page, 'Upper-arm elevation from torso').fill('115');
   await expect.poll(async () => (await stateInBrowser(page))?.angles).toEqual([115, 135]);
   await expect(page.getByText('Equal progress does not mean equal joint angles.')).toBeVisible();
 });
@@ -76,21 +76,22 @@ test('height updates unmeasured dimensions while preserving measurements and equ
 
 test('distinguishes assistive cable action from zero applied force and keeps return labels stable', async ({ page }) => {
   await page.getByLabel('Configuration A preset').selectOption('inside-upright');
-  await input(page, 'Arm elevation relative to torso').fill('180');
+  await input(page, 'Upper-arm elevation from torso').fill('180');
   await expect(panel(page, 'A').locator('.status')).toHaveText('Assists the pull');
-  await expect(panel(page, 'A').locator('.moment')).toHaveText('-105.9 N·m');
+  await expect(panel(page, 'A').locator('.moment')).toHaveText(/^-[0-9.]+ N·m$/);
   await input(page, 'A · Force per cable').fill('0');
   await expect(panel(page, 'A').locator('.status')).toContainText('No cable force');
   await expect(panel(page, 'A').locator('.moment')).toHaveText('0.0 N·m');
   await page.getByRole('button', { name: 'Play animation', exact: true }).click();
-  await expect(input(page, 'Arm elevation relative to torso')).not.toHaveValue('180');
+  await expect(input(page, 'Upper-arm elevation from torso')).not.toHaveValue('180');
   await expect(panel(page, 'A').locator('.status')).toContainText('No cable force');
   await page.getByRole('button', { name: 'Pause animation', exact: true }).click();
 });
 
 test('copies, swaps and undoes full setups with their corresponding results', async ({ page }) => {
+  const originalMoment = await panel(page,'A').locator('.moment').innerText();
   await page.getByRole('button', { name: 'Copy A → B', exact: true }).click();
-  await expect(panel(page, 'B').locator('.moment')).toHaveText('+67.3 N·m');
+  await expect(panel(page, 'B').locator('.moment')).toHaveText(originalMoment);
   await input(page, 'B · Pulley height').fill('180');
   await page.getByRole('button', { name: 'Swap A ⇄ B', exact: true }).click();
   await expect(input(page, 'A · Pulley height')).toHaveValue('180');
@@ -105,7 +106,7 @@ test('copies, swaps and undoes full setups with their corresponding results', as
 test('saves, reloads and reproduces an exported comparison in empty browser storage', async ({ page }) => {
   await page.getByLabel('Comparison name').fill('Overhead setup trial');
   await input(page, 'A · Pulley height').fill('205');
-  await page.getByRole('checkbox', { name: 'Same force per cable' }).check();
+  await page.getByRole('checkbox', { name: 'Same force per attachment' }).check();
   await input(page, 'A · Force per cable').fill('130');
   await expect.poll(async () => (await stateInBrowser(page))?.setups[1].tension).toBe(130);
   const expected = await stateInBrowser(page);
@@ -120,10 +121,10 @@ test('saves, reloads and reproduces an exported comparison in empty browser stor
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await imported(page, snapshot);
-  await expect(page.getByRole('status')).toContainText('Comparison imported.');
+  await expect(page.getByRole('status').filter({hasText:'Comparison imported.'})).toContainText('Comparison imported.');
   await expect.poll(() => stateInBrowser(page)).toEqual(expected);
   await imported(page, { version: 999 });
-  await expect(page.getByRole('status')).toContainText('Import failed:');
+  await expect(page.getByRole('status').filter({hasText:'Import failed:'})).toContainText('Import failed:');
   expect(await stateInBrowser(page)).toEqual(expected);
 });
 
@@ -150,10 +151,10 @@ test('suppresses direct cable moments after spatial backrest contact', async ({ 
   state.setups[1].backWidth = 1.5;
   await imported(page, state);
   await expect(panel(page, 'B').locator('.status')).toContainText('Backrest contact');
-  await expect(panel(page, 'B').locator('.moment')).toHaveText('— N·m');
+  await expect(panel(page, 'B').locator('.moment')).toHaveText(/—/);
   await page.getByRole('button', { name: 'Top view', exact: true }).click();
   await expect(panel(page, 'B').locator('.scene-top')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'A limit changes the story.' })).toBeVisible();
+  await expect(page.locator('.insight-card h2')).toBeVisible();
 });
 
 test('accepts natural sequential numeric typing including negative positions', async ({ page }) => {

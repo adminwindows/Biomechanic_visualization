@@ -1,6 +1,8 @@
 # Collaboration and delivery
 
-Read and preserve `EXERCISE_BIOMECHANICS_HANDOFF.md`. It defines both the product and the collaboration approach. Continue in small, reviewable milestones; discuss software, usefulness, and biomechanical meaning together.
+Read and preserve `EXERCISE_BIOMECHANICS_HANDOFF.md`. It defines both the product and the collaboration approach. The user's later instruction overrides milestone stopping gates: complete the requested application scope, using milestones for internal organization rather than reasons to stop. Discuss software, usefulness, and biomechanical meaning together.
+
+Every delivery must include a working hosted test link. The user must not need to fetch source, install dependencies, or build locally to test the work. Publish and verify the same Site after updates; preserve its audience. Keep the GitHub source and review branch current too. Do not claim a deployment succeeded until the hosting service confirms it.
 
 The user explicitly requires an explanation of the work at every delivery. Do not substitute a feature list or test count for that explanation. Cover:
 
