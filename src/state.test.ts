@@ -174,6 +174,21 @@ describe("movement comparison modes", () => {
 });
 
 describe('expanded exercise state and migrations', () => {
+  it('preserves optional motion mode and separate interval anchors without changing older snapshots', () => {
+    const state = createInitialState();
+    const older = parseComparison(JSON.stringify(state));
+    expect(older).not.toHaveProperty('motionMode');
+    expect(older).not.toHaveProperty('clearIntervalAnchors');
+    state.motionMode = 'usable';
+    state.clearIntervalAnchors = [170, 95]; // Separate panel anchors, not an ordered range.
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    state.motionMode = 'explore';
+    expect(parseComparison(JSON.stringify(state))).toEqual(state);
+    expect(() => validateState({ ...state, motionMode: 'unrestricted' })).toThrow('Motion mode');
+    for (const anchors of [[Infinity, 95], [170, NaN], [-181, 95], [170, 201], [170], [170, 95, 40]]) {
+      expect(() => validateState({ ...state, clearIntervalAnchors: anchors })).toThrow();
+    }
+  });
   it('preserves explicit bar length and compares implicit defaults by physical equipment span', () => {
     const state = createInitialState();
     state.setups[1] = structuredClone(state.setups[0]);

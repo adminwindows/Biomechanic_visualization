@@ -26,6 +26,8 @@ export type LabState = {
   profiles: [BodyProfile, BodyProfile];
   angles: [number, number];
   sync: 'angle' | 'progress' | 'independent';
+  motionMode?: 'explore' | 'usable';
+  clearIntervalAnchors?: [number, number];
   lockBody: boolean;
   lockForce: boolean;
   lockEquipment?: boolean;
@@ -237,6 +239,14 @@ export function validateState(input: unknown): LabState {
     lockBody: bool(s.lockBody, 'Body synchronization'), lockForce: bool(s.lockForce, 'Force synchronization'),
   };
   if (s.lockEquipment !== undefined) result.lockEquipment = bool(s.lockEquipment, 'Equipment synchronization');
+  if (s.motionMode !== undefined) result.motionMode = enumValue(s.motionMode, 'Motion mode', ['explore', 'usable'] as const);
+  if (s.clearIntervalAnchors !== undefined) {
+    const anchors = pair(s.clearIntervalAnchors, 'Clear-interval anchors');
+    result.clearIntervalAnchors = [
+      boundedNumber(anchors[0], 'A clear-interval anchor', -180, 200),
+      boundedNumber(anchors[1], 'B clear-interval anchor', -180, 200),
+    ];
+  }
   if (s.comparisonMode !== undefined) result.comparisonMode = enumValue(s.comparisonMode, 'Comparison mode', ['controlled', 'practical'] as const);
   if (s.criterion !== undefined) result.criterion = string(s.criterion, 'Comparison criterion', 1000, 0);
   if (s.notes !== undefined) result.notes = string(s.notes, 'Study notes', 10000, 0);

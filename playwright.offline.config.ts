@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
+  outputDir: 'test-results-pwa',
   testDir: "./e2e",
   testMatch: "offline.spec.ts",
   fullyParallel: false,

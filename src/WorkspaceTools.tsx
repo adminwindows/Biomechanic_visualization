@@ -25,6 +25,7 @@ import {
 } from "./training";
 import { Field } from "./Field";
 import "./workspace-tools.css";
+import { catalogEntries, emptyCatalogFilters, matchesCatalog, type CatalogFilters } from "./catalog";
 
 export function downloadText(
   text: string,
@@ -54,6 +55,7 @@ export function ExerciseCatalog({
 }) {
   const [search, setSearch] = useState("");
   const [family, setFamily] = useState("all");
+  const [filters, setFilters] = useState<CatalogFilters>({ ...emptyCatalogFilters });
   const [favorites, setFavorites] = useState<string[]>(readFavorites);
   const [onlyFavorite, setOnlyFavorite] = useState(false);
   const [target, setTarget] = useState<0 | 1>(0);
@@ -65,23 +67,28 @@ export function ExerciseCatalog({
       );
     } catch {}
   }, [favorites]);
-  const groups = Array.from(
-    new Set(presets.map((p) => getDefinition(p).family)),
+  const groups = Array.from(new Set(catalogEntries.map((entry) => entry.family)));
+  const filterDefinitions: { key: keyof CatalogFilters; label: string; all: string; values: string[] }[] = [
+    { key: "muscleGroup", label: "Muscle group", all: "All muscle groups", values: catalogEntries.flatMap((entry) => [...entry.muscleGroups]) },
+    { key: "equipment", label: "Equipment", all: "All equipment", values: catalogEntries.flatMap((entry) => [...entry.equipment]) },
+    { key: "mainJoint", label: "Main joint", all: "All joints", values: catalogEntries.map((entry) => entry.mainJoint) },
+    { key: "posture", label: "Posture", all: "All postures", values: catalogEntries.flatMap((entry) => [...entry.postures]) },
+    { key: "laterality", label: "Sides", all: "Both arrangements", values: catalogEntries.map((entry) => entry.laterality) },
+    { key: "status", label: "Available model", all: "All model statuses", values: catalogEntries.map((entry) => entry.status) },
+  ];
+  const visible = catalogEntries.filter((entry) =>
+    (family === "all" || entry.family === family) &&
+    (!onlyFavorite || favorites.includes(entry.setup.preset)) &&
+    matchesCatalog(entry, search, filters),
   );
-  const visible = presets.filter(
-    (p) =>
-      (family === "all" || getDefinition(p).family === family) &&
-      (!onlyFavorite || favorites.includes(p.preset)) &&
-      `${p.name} ${getDefinition(p).family} ${getDefinition(p).angleLabel}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
+  const hasFilters = search !== "" || family !== "all" || onlyFavorite || Object.values(filters).some((value) => value !== "all");
+  const clearFilters = () => { setSearch(""); setFamily("all"); setOnlyFavorite(false); setFilters({ ...emptyCatalogFilters }); };
   return (
     <details className="workspace-drawer catalog-drawer" id="catalog">
       <summary>
         <span>Exercise catalog</span>
         <span className="drawer-description">
-          Six model families · search, compare, favorite
+          Six model families · one machine illustration
         </span>
       </summary>
       <div className="drawer-body">
@@ -89,7 +96,7 @@ export function ExerciseCatalog({
           <input
             type="search"
             aria-label="Search exercises"
-            placeholder="Search exercises or movement…"
+            placeholder="Search names or aliases, e.g. lat prayer…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -123,20 +130,35 @@ export function ExerciseCatalog({
             </select>
           </label>
         </div>
+        <fieldset className="catalog-refinements">
+          <legend>Refine the starting setup</legend>
+          <div className="catalog-filter-grid">
+            {filterDefinitions.map((filter) => (
+              <label key={filter.key}>
+                <span>{filter.label}</span>
+                <select aria-label={`Catalog ${filter.label.toLowerCase()}`} value={filters[filter.key]} onChange={(event) => setFilters((old) => ({ ...old, [filter.key]: event.target.value }))}>
+                  <option value="all">{filter.all}</option>
+                  {[...new Set(filter.values)].sort().map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="catalog-results">
+          <p role="status" aria-live="polite">{visible.length} of {catalogEntries.length} setups</p>
+          {hasFilters && <button onClick={clearFilters}>Clear filters</button>}
+        </div>
         <div className="catalog-list">
-          {visible.map((p) => (
+          {visible.map((entry) => { const p = entry.setup; return (
             <div key={p.preset} className="catalog-item">
               <button
                 className="catalog-pick"
                 onClick={() => onPick(target, p.preset)}
               >
                 <strong>{p.name}</strong>
-                <span>
-                  {getDefinition(p).family} ·{" "}
-                  {p.resistance === "unknown" || p.model === "machine"
-                    ? "Geometry only"
-                    : getDefinition(p).angleLabel}
-                </span>
+                <span>{entry.family} · {entry.mainJoint}</span>
+                <span>{entry.equipment.join(" + ")} · {entry.laterality}</span>
+                <span className={`catalog-model-status ${entry.status === "Geometry only" ? "catalog-geometry-only" : ""}`}>{entry.status === "Geometry only" ? "Geometry only · mechanism unknown" : "External mechanics · simplified model"}</span>
               </button>
               <button
                 aria-label={`${favorites.includes(p.preset) ? "Unfavorite" : "Favorite"} ${p.name}`}
@@ -152,13 +174,14 @@ export function ExerciseCatalog({
                 {favorites.includes(p.preset) ? "★" : "☆"}
               </button>
             </div>
-          ))}
+          ); })}
         </div>
         {!visible.length && <p>No exercises match these filters.</p>}
         <p className="small-note">
-          The catalog contains distinct joint and force models. Exercises with
-          different joint coordinates can be viewed together, but their moments
-          are not ranked or overlaid as equivalent.
+          Muscle groups are navigation tags, not calculated recruitment. Filters
+          describe each preset’s starting setup. Geometry-only entries have no
+          calculated resistance profile. Different joint coordinates are shown
+          separately rather than ranked or overlaid as equivalent.
         </p>
       </div>
     </details>

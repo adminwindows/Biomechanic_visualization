@@ -14,6 +14,52 @@ async function choose(page:Page,side:'A'|'B',id:string){await page.getByLabel(`C
 
 test.beforeEach(async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{level:1})).toBeVisible();});
 
+test('catalog aliases and setup filters distinguish modeled exercises from machine illustrations', async({page}) => {
+  const catalog = await drawer(page, 'catalog');
+  const items = catalog.locator('.catalog-item');
+  await expect(items).toHaveCount(18);
+  await catalog.getByLabel('Search exercises').fill('lat prayer');
+  await expect(items).toHaveCount(5);
+  await catalog.getByRole('button', {name: 'Clear filters'}).click();
+  await catalog.getByLabel('Catalog equipment', {exact: true}).selectOption('Dumbbell');
+  await expect(items).toHaveCount(1);
+  await catalog.getByLabel('Catalog muscle group').selectOption('Deltoids');
+  await catalog.getByLabel('Catalog main joint').selectOption('Shoulder');
+  await catalog.getByLabel('Catalog posture').selectOption('Standing');
+  await catalog.getByLabel('Catalog sides').selectOption('Unilateral');
+  await expect(items).toHaveCount(1);
+  await catalog.getByLabel('Catalog available model').selectOption('Geometry only');
+  await expect(items).toHaveCount(0);
+  await expect(catalog.getByText('No exercises match these filters.')).toBeVisible();
+  await catalog.getByRole('button', {name: 'Clear filters'}).click();
+  await catalog.getByLabel('Catalog available model').selectOption('Geometry only');
+  await expect(items).toHaveCount(1);
+  await items.locator('.catalog-pick').click();
+  await expect(setupCard(page, 'A').locator('.status')).toContainText('Resistance not calculated');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('loads portable example comparisons directly and preserves the prior comparison for undo', async({page}) => {
+  await expect.poll(() => savedState(page)).not.toBeNull();
+  const initial = await savedState(page);
+  const examples = await drawer(page, 'example-comparisons');
+  await examples.getByRole('button', {name: /^Pullover: change pulley height/}).click();
+  await expect.poll(async () => (await savedState(page))?.criterion).not.toBe(initial?.criterion);
+  const pullover = (await savedState(page))!;
+  expect(pullover.setups[0].pulleyHeight).not.toBe(pullover.setups[1].pulleyHeight);
+  await page.getByRole('button', {name: 'Undo', exact: true}).click();
+  await expect.poll(async () => (await savedState(page))?.name).toBe(initial?.name);
+  await examples.getByRole('button', {name: /^Lateral raise: cable versus dumbbell/}).click();
+  await expect.poll(async () => (await savedState(page))?.setups[1].resistance).toBe('dumbbell');
+  expect((await savedState(page))!.setups[0].model).toBe('raise');
+  await examples.getByRole('button', {name: /^Same height, different arm proportions/}).click();
+  await expect.poll(async () => (await savedState(page))?.lockBody).toBe(false);
+  const proportions = (await savedState(page))!;
+  expect(proportions.profiles[0].values.height).toBe(proportions.profiles[1].values.height);
+  expect(proportions.profiles[0].values.upperArm).not.toBe(proportions.profiles[1].values.upperArm);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 test('all twelve scenarios use distinct geometry and the unknown machine has no numeric profile',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const cases=['classic','outside','inside','bench','curl-low','curl-bayesian','extension-pushdown','extension-overhead','raise-cable','raise-dumbbell','fly-cable','hip-extension'];

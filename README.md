@@ -12,7 +12,9 @@ An interactive workspace for understanding how exercise setup changes external r
 4. Drag a pulley, pelvis or active grip/ankle. Numeric fields and keyboard controls provide alternatives. Zoom and pan remain shared between A and B.
 5. Save named comparisons and body/equipment profiles. Export a comparison, the entire library, or a readable comparison report. Paste an exercise list or CSV to find supported movements and resolve ambiguous names.
 
-On first production load, wait for **Ready offline** before disconnecting. Installation depends on your browser: use the install action when offered, or the Android browser's install/add-to-home-screen menu. An update waits for the explicit **Save & update** action. See [offline behavior and verification](docs/OFFLINE.md).
+For a faster start, open **Example comparisons** and load one of the three prepared studies directly. Undo returns to your previous comparison; each example is also available as portable JSON.
+
+On first production load, wait for **Offline ready** before disconnecting. Installation depends on your browser: use the install action when offered, or the Android browser's install/add-to-home-screen menu. An update waits for the explicit **Save & update** action. See [offline behavior and verification](docs/OFFLINE.md).
 
 ## Exercise models
 
@@ -31,12 +33,14 @@ There are 18 educational presets spanning the 12 specified scenarios, including 
 
 - Side, front and top SVG projections of a shared 3D engine; articulated body/support geometry, force arrows, draggable points and shared framing.
 - Equal-angle, equal-progress and independent positions; animation speed/reduced-motion controls; copy/swap and undo/redo. Incompatible joint coordinates show separate curves and no numerical ranking.
+- Explore mode retains the chosen range; **Usable range according to the model** constrains movement to a selected clear interval without replacing the original range. Shared movement respects both panels. Unknown mechanisms and slack cable routes remain unavailable for this clearance constraint.
 - Actual cable force, selected mass with an explicit transmission factor, dumbbell weight, distinct unknown/slack/zero-force states, and optional explicitly supplied arm or leg segment masses.
 - Cable and gravity contributions separately and combined; signed moments, selected-region summaries, external work, separate contact/reversal events, settings differences, parameter sweeps and sensitivity checks.
 - A symmetric rigid-bar grip solver preserving upper-arm/forearm/hand lengths and the fixed elbow bend. Incompatible grip/bar/support constraints are reported, without stretching body segments or moving equipment.
 - Spatial backrest–cable and backrest–bar contacts. Analytic event candidates prevent narrow represented contacts and tangencies from falling between regular curve samples.
 - Height plus refined arm, torso, shoulder, pelvis, thigh, lower-leg, foot and head/neck dimensions; landmark diagram, example/estimated/measured provenance and locks. Explicit regeneration preserves measurements and locked fields.
 - Named comparison, body and equipment/setup libraries; favorites, validated portable JSON, readable reports, and backups before legacy-model or unreadable saved data is replaced.
+- Searchable exercise aliases and filters for navigation muscle tags, equipment, joint, posture, unilateral/bilateral setup, and available model. Three ready-to-load comparisons provide reproducible starting questions.
 - Exercise-name/CSV matching that retains ambiguous and unsupported names and the user's explicit resolutions.
 - A comparison notebook distinguishing model calculations, assumption-based estimates, empirical evidence and hypotheses. It does not fabricate training-study findings.
 - Install manifest/icons, verified offline caching, cache repair and controlled updates that retain in-progress state.
@@ -55,7 +59,9 @@ The broader exercise wishlist, muscle-model research and commercial-machine cali
 
 ## Verification and acceptance
 
-[ACCEPTANCE.md](docs/ACCEPTANCE.md) maps all 26 handoff acceptance criteria to implementation and checks. [OFFLINE.md](docs/OFFLINE.md) records production cache/update verification. Automated browser checks cover desktop, a 360 px phone viewport and phone landscape. Actual Android installation and performance on the user's physical device remain device acceptance, not a claimed result of emulation.
+[ACCEPTANCE.md](docs/ACCEPTANCE.md) maps all 26 handoff acceptance criteria to implementation and checks. [VERIFICATION.md](docs/VERIFICATION.md) records observed results, and [OFFLINE.md](docs/OFFLINE.md) explains production cache/update verification. Automated browser checks cover desktop, a 360 px phone viewport and phone landscape. Actual Android installation and performance on the user's physical device remain device acceptance, not a claimed result of emulation.
+
+Use the [comparison guide](docs/COMPARISON_GUIDE.md) for questions and conditional interpretations across the six families, and the [importable examples](public/examples/README.md) for portable starting comparisons. The [extension guide](docs/EXTENDING.md) explains how to add a suitable model or preset. [CHANGELOG.md](CHANGELOG.md) records delivered behavior and decisions.
 
 ## Development
 

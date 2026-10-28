@@ -5,12 +5,13 @@ The source implements the twelve specified exercise scenarios and the supporting
 | Check | Observed result |
 |---|---|
 | TypeScript and production build | Passed; generated offline shell includes HTML, bundled model/catalog code, CSS, manifest and icons. |
-| Numerical/state/library/analysis/parser tests | 130 passing tests: 74 engine, 27 state, 7 library, 13 analysis, 9 parser. |
-| Interactive browser workflows | 40 cases passed in a full desktop/phone/landscape run. Four additional desktop/phone cases passed after adding bar-length and hip-segment-mass persistence validation, for 44 verified cases. |
-| Production offline workflows | 5 passing cases: complete cache/icons, disconnected reload and editing, explicit update/state preservation, install-status accuracy, cache repair. |
+| Numerical/state/library/analysis/parser tests | 144 passing tests: 74 engine, 28 state, 7 library, 13 analysis, 9 parser, 8 geometric usable-range and 5 movement-constraint tests. |
+| Interactive browser workflows | 52 verified desktop/phone/landscape cases. The final full run passed 49; a four-case rerun covered the three failures after correcting a test's initial-save timing assumption and separating the suites' output folders. All affected cases then passed; application code did not change for these harness fixes. |
+| Production offline workflows | 5 passing cases against the final production assets: complete cache/icons/examples, disconnected reload/editing/example loading, explicit update/state preservation, install-status accuracy, cache repair. The suite also passed alongside the affected interactive rerun after output-folder isolation. |
 | Numerical contact regression | A contact interval around 196.100°–196.175° is detected even though regular 0.5° samples miss it; exact tangency is also checked. |
+| Usable-range restriction | Preserves original ranges and respects clear connected portions in angle/progress synchronization. Geometric regressions cover narrow contact, tangency, between-sample floor crossings and singular cable endpoints; an independent scan found no invalid points among 5,398 returned-interval points/boundaries/candidates. |
 | Browser errors and layout | No runtime errors or horizontal page overflow in the tested desktop, 360 px portrait and 844 × 390 landscape workflows. |
-| Hosted access | Owner-private Site; native deployment status is checked before delivery. Local browser tests exercise the same packaged production assets. |
+| Hosted access | Owner-private Site; native deployment status is checked before delivery. Interactive browser checks use the development server; the offline suite exercises the built production assets. |
 
 ## Timing observation
 

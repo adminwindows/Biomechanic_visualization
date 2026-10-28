@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "modelVersion": "biomechanics-2",
+  "name": "Same height · different arm proportions",
+  "setups": [
+    {
+      "preset": "classic",
+      "name": "Pullover · 70 cm straight-arm reach",
+      "kind": "standing",
+      "facing": -1,
+      "tilt": 90,
+      "hipX": 1.35,
+      "hipHeight": 0.9,
+      "pulleyHeight": 2.25,
+      "outletSpacing": 1.55,
+      "attachmentSpacing": 0.95,
+      "cables": 1,
+      "tension": 100,
+      "elbow": 0,
+      "backLength": 0.82,
+      "backWidth": 0.34,
+      "backThickness": 0.1,
+      "range": [
+        120,
+        180
+      ],
+      "model": "pullover",
+      "resistance": "cable",
+      "loadMode": "force",
+      "barLength": 1.03,
+      "slack": false,
+      "forceKnown": true,
+      "segmentGravity": false
+    },
+    {
+      "preset": "classic",
+      "name": "Pullover · 77 cm straight-arm reach",
+      "kind": "standing",
+      "facing": -1,
+      "tilt": 90,
+      "hipX": 1.35,
+      "hipHeight": 0.9,
+      "pulleyHeight": 2.25,
+      "outletSpacing": 1.55,
+      "attachmentSpacing": 0.95,
+      "cables": 1,
+      "tension": 100,
+      "elbow": 0,
+      "backLength": 0.82,
+      "backWidth": 0.34,
+      "backThickness": 0.1,
+      "range": [
+        120,
+        180
+      ],
+      "model": "pullover",
+      "resistance": "cable",
+      "loadMode": "force",
+      "barLength": 1.03,
+      "slack": false,
+      "forceKnown": true,
+      "segmentGravity": false
+    }
+  ],
+  "profiles": [
+    {
+      "values": {
+        "thigh": 0.43,
+        "shank": 0.43,
+        "foot": 0.24,
+        "pelvisWidth": 0.3,
+        "headNeck": 0.24,
+        "height": 1.75,
+        "upperArm": 0.33,
+        "forearm": 0.27,
+        "hand": 0.1,
+        "torso": 0.59,
+        "shoulderWidth": 0.42
+      },
+      "provenance": {
+        "height": "example",
+        "upperArm": "example",
+        "forearm": "example",
+        "hand": "example",
+        "torso": "example",
+        "shoulderWidth": "example",
+        "thigh": "example",
+        "shank": "example",
+        "foot": "example",
+        "pelvisWidth": "example",
+        "headNeck": "example"
+      },
+      "locked": {
+        "height": false,
+        "upperArm": false,
+        "forearm": false,
+        "hand": false,
+        "torso": false,
+        "shoulderWidth": false,
+        "thigh": false,
+        "shank": false,
+        "foot": false,
+        "pelvisWidth": false,
+        "headNeck": false
+      },
+      "referenceModel": "handoff-illustrative-proportions-v1"
+    },
+    {
+      "values": {
+        "thigh": 0.43,
+        "shank": 0.43,
+        "foot": 0.24,
+        "pelvisWidth": 0.3,
+        "headNeck": 0.24,
+        "height": 1.75,
+        "upperArm": 0.37,
+        "forearm": 0.3,
+        "hand": 0.1,
+        "torso": 0.59,
+        "shoulderWidth": 0.42
+      },
+      "provenance": {
+        "height": "example",
+        "upperArm": "example",
+        "forearm": "example",
+        "hand": "example",
+        "torso": "example",
+        "shoulderWidth": "example",
+        "thigh": "example",
+        "shank": "example",
+        "foot": "example",
+        "pelvisWidth": "example",
+        "headNeck": "example"
+      },
+      "locked": {
+        "height": false,
+        "upperArm": false,
+        "forearm": false,
+        "hand": false,
+        "torso": false,
+        "shoulderWidth": false,
+        "thigh": false,
+        "shank": false,
+        "foot": false,
+        "pelvisWidth": false,
+        "headNeck": false
+      },
+      "referenceModel": "handoff-illustrative-proportions-v1"
+    }
+  ],
+  "angles": [
+    160,
+    160
+  ],
+  "sync": "angle",
+  "lockBody": false,
+  "lockForce": true,
+  "lockEquipment": true,
+  "comparisonMode": "controlled",
+  "criterion": "At identical 175 cm height and fixed equipment, how do longer upper-arm and forearm segments alter reach and external cable moment?",
+  "notes": "Both profiles are fictional examples, not measurements. A: upper arm 33 cm + forearm 27 cm + wrist-to-grip 10 cm = 70 cm straight-arm reach. B: 37 + 30 + 10 = 77 cm. Height, torso, shoulder width, leg dimensions, posture, pelvis anchor, 103 cm bar, pulley outlet and one 100 N central cable are identical. The body lock is intentionally off; force and equipment locks are on. Equipment does not move to compensate for the longer arms. Greater external moment does not establish greater muscle force or hypertrophy.",
+  "observation": "Use a copy of these examples to enter actual measurements; the supplied values retain example provenance.",
+  "region": [
+    120,
+    180
+  ]
+}

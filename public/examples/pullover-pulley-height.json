@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "modelVersion": "biomechanics-2",
+  "name": "Pullover · change only pulley height",
+  "setups": [
+    {
+      "preset": "classic",
+      "name": "Horizontal pullover · outlet 225 cm",
+      "kind": "standing",
+      "facing": -1,
+      "tilt": 90,
+      "hipX": 1.35,
+      "hipHeight": 0.9,
+      "pulleyHeight": 2.25,
+      "outletSpacing": 1.55,
+      "attachmentSpacing": 0.95,
+      "cables": 1,
+      "tension": 100,
+      "elbow": 0,
+      "backLength": 0.82,
+      "backWidth": 0.34,
+      "backThickness": 0.1,
+      "range": [
+        120,
+        180
+      ],
+      "model": "pullover",
+      "resistance": "cable",
+      "loadMode": "force",
+      "barLength": 1.03,
+      "slack": false,
+      "forceKnown": true,
+      "segmentGravity": false
+    },
+    {
+      "preset": "classic",
+      "name": "Horizontal pullover · outlet 185 cm",
+      "kind": "standing",
+      "facing": -1,
+      "tilt": 90,
+      "hipX": 1.35,
+      "hipHeight": 0.9,
+      "pulleyHeight": 1.85,
+      "outletSpacing": 1.55,
+      "attachmentSpacing": 0.95,
+      "cables": 1,
+      "tension": 100,
+      "elbow": 0,
+      "backLength": 0.82,
+      "backWidth": 0.34,
+      "backThickness": 0.1,
+      "range": [
+        120,
+        180
+      ],
+      "model": "pullover",
+      "resistance": "cable",
+      "loadMode": "force",
+      "barLength": 1.03,
+      "slack": false,
+      "forceKnown": true,
+      "segmentGravity": false
+    }
+  ],
+  "profiles": [
+    {
+      "values": {
+        "thigh": 0.43,
+        "shank": 0.43,
+        "foot": 0.24,
+        "pelvisWidth": 0.3,
+        "headNeck": 0.24,
+        "height": 1.75,
+        "upperArm": 0.33,
+        "forearm": 0.27,
+        "hand": 0.1,
+        "torso": 0.59,
+        "shoulderWidth": 0.42
+      },
+      "provenance": {
+        "height": "example",
+        "upperArm": "example",
+        "forearm": "example",
+        "hand": "example",
+        "torso": "example",
+        "shoulderWidth": "example",
+        "thigh": "example",
+        "shank": "example",
+        "foot": "example",
+        "pelvisWidth": "example",
+        "headNeck": "example"
+      },
+      "locked": {
+        "height": false,
+        "upperArm": false,
+        "forearm": false,
+        "hand": false,
+        "torso": false,
+        "shoulderWidth": false,
+        "thigh": false,
+        "shank": false,
+        "foot": false,
+        "pelvisWidth": false,
+        "headNeck": false
+      },
+      "referenceModel": "handoff-illustrative-proportions-v1"
+    },
+    {
+      "values": {
+        "thigh": 0.43,
+        "shank": 0.43,
+        "foot": 0.24,
+        "pelvisWidth": 0.3,
+        "headNeck": 0.24,
+        "height": 1.75,
+        "upperArm": 0.33,
+        "forearm": 0.27,
+        "hand": 0.1,
+        "torso": 0.59,
+        "shoulderWidth": 0.42
+      },
+      "provenance": {
+        "height": "example",
+        "upperArm": "example",
+        "forearm": "example",
+        "hand": "example",
+        "torso": "example",
+        "shoulderWidth": "example",
+        "thigh": "example",
+        "shank": "example",
+        "foot": "example",
+        "pelvisWidth": "example",
+        "headNeck": "example"
+      },
+      "locked": {
+        "height": false,
+        "upperArm": false,
+        "forearm": false,
+        "hand": false,
+        "torso": false,
+        "shoulderWidth": false,
+        "thigh": false,
+        "shank": false,
+        "foot": false,
+        "pelvisWidth": false,
+        "headNeck": false
+      },
+      "referenceModel": "handoff-illustrative-proportions-v1"
+    }
+  ],
+  "angles": [
+    160,
+    160
+  ],
+  "sync": "angle",
+  "lockBody": true,
+  "lockForce": true,
+  "lockEquipment": false,
+  "comparisonMode": "controlled",
+  "criterion": "How does lowering only the cable outlet from 225 cm to 185 cm change the external resistance over 120–180° of arm elevation?",
+  "notes": "Controlled geometric example: identical fictional 175 cm body profiles, torso horizontal, pelvis X 135 cm / height 90 cm, straight elbows, 103 cm rigid bar, one central cable at 100 N. Only outlet height differs. Body/bar gravity, friction, inertia and unrepresented contact are excluded. This compares external resistance, not muscle tension or hypertrophy.",
+  "observation": "Example only. No equipment, comfort, or training measurements have been supplied.",
+  "region": [
+    120,
+    180
+  ]
+}

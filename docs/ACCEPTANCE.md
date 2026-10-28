@@ -37,6 +37,8 @@ The release has six quantitative model families: pullover, elbow flexion, elbow 
 
 ## Verification commands
 
+The handoff's separate exploration/usable-range behavior is implemented by [usableRange.ts](../src/usableRange.ts) and [motionConstraint.ts](../src/motionConstraint.ts). Users can choose a clear connected interval, retain the original range, and synchronize only where both panels satisfy represented geometry. Unknown mechanisms and slack cable routing remain unavailable for this constraint. This is a geometric model restriction, not a personal range-of-motion or safety assessment.
+
 Run numerical/state/library/analysis/parser checks and the production build from the repository root:
 
 ```sh

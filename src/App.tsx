@@ -8,6 +8,7 @@ import {
   type Setup,
 } from "./engine";
 import { Field } from "./Field";
+import { constrainMotion, motionConstraints, setMotionAngle } from "./motionConstraint";
 import {
   ExerciseCatalog,
   SavedWorkspace,
@@ -17,6 +18,7 @@ import {
 import { AnalysisPanel } from "./AnalysisPanel";
 import { BodyDiagram } from "./BodyDiagram";
 import { OfflineStatus } from "./OfflineStatus";
+import { ExampleComparisons } from "./ExampleComparisons";
 import { Scene } from "./Scene";
 import { Curve } from "./Curve";
 import {
@@ -87,7 +89,7 @@ const profileFields: [keyof Profile, string, string, number, number][] = [
 
 export default function App() {
   const [initial] = useState(loadState);
-  const [state, setState] = useState<LabState>(initial.state);
+  const [state, setState] = useState<LabState>(() => constrainMotion(initial.state));
   const [notice, setNotice] = useState(initial.error ?? "");
   const [view, setView] = useState<"side" | "top" | "front">("side");
   const [zoom, setZoom] = useState(1);
@@ -113,6 +115,8 @@ export default function App() {
   const results = state.setups.map((setup, i) =>
     evaluate(setup, profiles[i], state.angles[i]),
   );
+  const usableMode = state.motionMode === "usable";
+  const motion = useMemo(() => usableMode ? motionConstraints(state) : null, [state, usableMode]);
   const shared = sharedRange(state);
   const comparable = compatible(state.setups[0], state.setups[1]);
   const modelDefinitions = state.setups.map(getDefinition);
@@ -122,7 +126,7 @@ export default function App() {
     try {
       const previous = stateRef.current;
       const draft = clone(previous);
-      const next = validateState(change(draft) ?? draft);
+      const next = constrainMotion(validateState(change(draft) ?? draft));
       setHistory((h) => [...h.slice(-49), clone(previous)]);
       setFuture([]);
       setState(next);
@@ -152,8 +156,9 @@ export default function App() {
     const timer = window.setInterval(
       () =>
         setState((previous) => {
-          const interval =
-            previous.sync === "angle"
+          const interval = previous.motionMode === "usable"
+            ? motionConstraints(previous).selected[0]
+            : previous.sync === "angle"
               ? sharedRange(previous)
               : previous.setups[0].range;
           if (!interval || interval[0] === interval[1]) return previous;
@@ -166,7 +171,7 @@ export default function App() {
             next = interval[1];
             direction.current = -1;
           }
-          return setAngle(previous, 0, next);
+          return setMotionAngle(previous, 0, next);
         }),
       50,
     );
@@ -401,6 +406,13 @@ export default function App() {
           }}
         />
         <ExerciseCatalog onPick={choosePreset} />
+        <ExampleComparisons onLoad={(next) => {
+          setPlaying(false);
+          setZoom(1);
+          setPan([0, 0]);
+          setView(getDefinition(next.setups[0]).plane);
+          update(() => next);
+        }} onNotice={setNotice} />
         <div className="study-bar">
           <div className="study-name">
             <span className="study-icon">
@@ -627,7 +639,7 @@ export default function App() {
                   onPanChange={setPan}
                   onSetupChange={(patch) => setupPatch(side, patch)}
                   onAngleChange={(angle) =>
-                    update((d) => setAngle(d, side, angle))
+                    update((d) => setMotionAngle(d, side, angle))
                   }
                 />
                 <div className="metric-strip">
@@ -733,11 +745,63 @@ export default function App() {
               </select>
             </label>
           </div>
+          <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
+            <label className="select-field">
+              Movement mode
+              <select aria-label="Movement mode" value={state.motionMode ?? "explore"}
+                onChange={(event) => update(d => {
+                  d.motionMode = event.target.value as "explore" | "usable";
+                  d.clearIntervalAnchors = [...d.angles];
+                })}>
+                <option value="explore">Explore full range</option>
+                <option value="usable">Usable range according to the model</option>
+              </select>
+            </label>
+            <p className="small-note" style={{ margin: 0 }}>
+              {usableMode
+                ? "Motion stays within one connected portion without represented backrest contact or invalid geometry. This is not personal range of motion or a clearance assessment of the whole machine. Your original ranges are preserved."
+                : "Explore the full selected ranges. Contact poses are ghosted and their direct mechanical results are unavailable."}
+            </p>
+            {usableMode && motion && (state.sync === "independent" ? [0, 1] : [0]).map(index => {
+              const side = index as Side;
+              const options = motion.options[side];
+              const selected = motion.selected[side];
+              const selectedIndex = selected ? options.findIndex(interval => interval[0] === selected[0] && interval[1] === selected[1]) : -1;
+              return <label className="select-field" key={side} style={{ display: "grid", justifyContent: "stretch" }}>
+                {state.sync === "independent" ? `${side === 0 ? "A" : "B"} clear portion` : "Shared clear portion"}
+                <select aria-label={state.sync === "independent" ? `${side === 0 ? "A" : "B"} clear portion` : "Shared clear portion"}
+                  disabled={!options.length} value={selectedIndex} style={{ maxWidth: "100%", width: "100%" }}
+                  onChange={event => update(d => {
+                    const choice = Number(event.target.value);
+                    const anchors: [number, number] = [...d.angles];
+                    for (const target of (d.sync === "independent" ? [side] : [0, 1])) {
+                      const interval = motion.options[target][choice];
+                      anchors[target] = (interval[0] + interval[1]) / 2;
+                    }
+                    d.clearIntervalAnchors = anchors;
+                  })}>
+                  {!options.length && <option value={-1}>No shared clear portion</option>}
+                  {options.map((interval, option) => <option key={option} value={option}>
+                    {interval[0].toFixed(2)}–{interval[1].toFixed(2)}°
+                    {state.sync === "progress" ? ` in A; ${motion.options[1][option][0].toFixed(2)}–${motion.options[1][option][1].toFixed(2)}° in B` : ""}
+                  </option>)}
+                </select>
+                {!options.length && <span role="status" className="small-note">
+                  {(state.sync === "independent" ? !motion.known[side] : motion.known.some(known => !known))
+                    ? "Cable routing or machine motion is not modeled for this configuration. Use exploration mode; no model clearance claim is available."
+                    : state.sync === "independent"
+                      ? "No clear portion was found in this setup's selected range. Change the setup or range, or return to exploration."
+                      : "No clear portion satisfies both setups at this synchronization. Choose independent positions, change the setup or return to exploration."}
+                </span>}
+              </label>;
+            })}
+          </div>
           <div className="movement-row">
             <button
               className={`play-button ${playing ? "is-playing" : ""}`}
               disabled={
                 reducedMotion ||
+                (usableMode && !motion?.selected[0]) ||
                 (state.sync === "angle" && (!shared || shared[0] === shared[1]))
               }
               onClick={() => setPlaying((v) => !v)}
@@ -759,24 +823,26 @@ export default function App() {
             </button>
             <div className="movement-sliders">
               {state.sync === "progress" && (
+                <fieldset disabled={usableMode && !motion?.progress} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                 <Field
                   label="Shared movement progress"
                   value={
                     movementProgress(state.setups[0], state.angles[0]) * 100
                   }
-                  min={0}
-                  max={100}
+                  min={motion?.progress ? motion.progress[0] * 100 : 0}
+                  max={motion?.progress ? motion.progress[1] * 100 : 100}
                   unit="%"
                   onChange={(value) =>
                     update((d) =>
-                      setAngle(d, 0, angleAtProgress(d.setups[0], value / 100)),
+                      setMotionAngle(d, 0, angleAtProgress(d.setups[0], value / 100)),
                     )
                   }
                 />
+                </fieldset>
               )}
               {(state.sync === "independent" ? [0, 1] : [0]).map((i) => (
+                <fieldset key={i} disabled={usableMode && !motion?.selected[i]} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                 <Field
-                  key={i}
                   label={
                     state.sync === "independent"
                       ? `${i === 0 ? "A" : "B"} · ${modelDefinitions[i].angleLabel}`
@@ -784,19 +850,20 @@ export default function App() {
                   }
                   value={state.angles[i]}
                   min={
-                    state.sync === "angle" && shared
+                    motion?.selected[i]?.[0] ?? (state.sync === "angle" && shared
                       ? shared[0]
-                      : state.setups[i].range[0]
+                      : state.setups[i].range[0])
                   }
                   max={
-                    state.sync === "angle" && shared
+                    motion?.selected[i]?.[1] ?? (state.sync === "angle" && shared
                       ? shared[1]
-                      : state.setups[i].range[1]
+                      : state.setups[i].range[1])
                   }
                   step={0.5}
                   unit="°"
-                  onChange={(v) => update((d) => setAngle(d, i as Side, v))}
+                  onChange={(v) => update((d) => setMotionAngle(d, i as Side, v))}
                 />
+                </fieldset>
               ))}
             </div>
             <div className="angle-readout">
@@ -861,7 +928,7 @@ export default function App() {
               setups={state.setups}
               profiles={profiles}
               angles={state.angles}
-              onAngle={(angle) => update((d) => setAngle(d, 0, angle))}
+              onAngle={(angle) => update((d) => setMotionAngle(d, 0, angle))}
               region={state.region}
               onRegionChange={(region) =>
                 update((d) => {

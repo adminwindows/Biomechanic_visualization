@@ -52,6 +52,9 @@ test("prepares the complete shell and supplies valid install icons", async ({
   expect(cached).toContain("/index.html");
   expect(cached).toContain("/manifest.webmanifest");
   expect(cached).toContain("/icons/icon-192.png");
+  expect(cached).toContain("/examples/pullover-pulley-height.json");
+  expect(cached).toContain("/examples/cable-vs-dumbbell-raise.json");
+  expect(cached).toContain("/examples/equal-height-proportions.json");
   expect(
     cached.some((path) => path.endsWith(".js") && path.startsWith("/assets/")),
   ).toBe(true);
@@ -102,6 +105,13 @@ test("reloads and edits the saved application with the network disconnected", as
     )
     .toBe("Edited without a connection");
   await page.reload();
+  await expect(name).toHaveValue("Edited without a connection");
+  const examples = page.locator('#example-comparisons');
+  await examples.locator('summary').click();
+  await examples.getByRole('button', {name: /^Lateral raise: cable versus dumbbell/}).click();
+  await expect(page.getByLabel('Configuration A preset', {exact: true})).toHaveValue('raise-cable');
+  await expect(page.getByLabel('Configuration B preset', {exact: true})).toHaveValue('raise-dumbbell');
+  await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect(name).toHaveValue("Edited without a connection");
   expect(errors).toEqual([]);
 });
