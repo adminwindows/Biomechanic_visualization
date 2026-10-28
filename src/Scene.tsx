@@ -1,0 +1,239 @@
+import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { instrumentPalette, taperedSegment } from './instrumentGraphics';
+import './instrument.css';
+import { bodyCapsules } from './collisions';
+import { evaluate, geometry, getDefinition, type Profile, type Setup, type Vec3 } from './engine';
+
+type SceneProps = {
+  setup: Setup; profile: Profile; angle: number;
+  setups: [Setup, Setup]; profiles: [Profile, Profile];
+  view: 'side' | 'top' | 'front'; label: 'A' | 'B'; annotations: boolean;
+  onSetupChange?: (patch: Partial<Setup>) => void;
+  onAngleChange?: (angle: number) => void;
+  zoom?: number;
+  /** Shared pan in displayed-plane metres, positive right/up. */
+  pan?: [number, number];
+  onPanChange?: (pan: [number, number]) => void;
+};
+type Point = [number, number];
+type Drag = { kind: 'outlet' | 'anchor' | 'angle' | 'pan'; index: number; pointerId: number; start: Point; setup: Setup; pan: Point; scale: number };
+const { ink, muted } = instrumentPalette;
+const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul = (a: Vec3, n: number): Vec3 => [a[0] * n, a[1] * n, a[2] * n];
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+function extent(setups: [Setup, Setup], profiles: [Profile, Profile]) {
+  const points: Vec3[] = [[0, 0, 0], [0, 0, 2.25]];
+  setups.forEach((setup, i) => {
+    setup.obstacles?.forEach(obstacle => {
+      if (obstacle.type === 'box') for (let bits = 0; bits < 8; bits++) points.push(obstacle.center.map((value, axis) => value + (bits & (1 << axis) ? 1 : -1) * obstacle.size[axis] / 2) as Vec3);
+      else { points.push(obstacle.a, obstacle.b); for (let axis = 0; axis < 3; axis++) for (const sign of [-1, 1]) { const edge = [...obstacle.a] as Vec3; edge[axis] += sign * obstacle.radius; points.push(edge); } }
+    });
+    const definition = getDefinition(setup);
+    for (let j = 0; j <= 40; j++) {
+      const angle = definition.minAngle + (definition.maxAngle - definition.minAngle) * j / 40;
+      const g = geometry(setup, profiles[i], angle);
+      points.push(g.hip, g.shoulder, g.elbow, g.hand, g.head, ...g.grips);
+      if (setup.kind === 'bench') points.push(...g.backCorners);
+      g.cables.forEach(c => points.push(c.attachment, c.outlet));
+      g.limbs?.forEach(limb => points.push(limb.from, limb.to));
+      if (g.supportPoints) points.push(...g.supportPoints);
+    }
+  });
+  return { min: [0, 1, 2].map(axis => Math.min(...points.map(p => p[axis])) - .22), max: [0, 1, 2].map(axis => Math.max(...points.map(p => p[axis])) + .22) };
+}
+
+function hull(points: Point[]): Point[] {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: Point, a: Point, b: Point) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (items: Point[]) => { const result: Point[] = []; for (const item of items) { while (result.length >= 2 && cross(result[result.length - 2], result[result.length - 1], item) <= 0) result.pop(); result.push(item); } return result; };
+  return [...half(sorted).slice(0, -1), ...half([...sorted].reverse()).slice(0, -1)];
+}
+
+export function Scene({ setup, profile, angle, setups, profiles, view, label, annotations, onSetupChange, onAngleChange, zoom = 1, pan = [0, 0], onPanChange }: SceneProps) {
+  const id = useId().replace(/:/g, '');
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef<Drag | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [renderedWidth, setRenderedWidth] = useState(520);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const resize = () => setRenderedWidth(Math.max(240, svg.getBoundingClientRect().width));
+    resize(); const observer = new ResizeObserver(resize); observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
+  const fontScale = Math.max(1, 520 / renderedWidth);
+  const color = label === 'A' ? instrumentPalette.teal : instrumentPalette.coral;
+  const result = evaluate(setup, profile, angle), g = result.geometry;
+  const definition = getDefinition(setup);
+  const distanceBounds: [number, number] = setup.exploration ? [-10, 10] : [setup.equipmentLimits?.distanceMin ?? -5, setup.equipmentLimits?.distanceMax ?? 5];
+  const pulleyBounds: [number, number] = setup.exploration ? [.01, 5] : [setup.equipmentLimits?.pulleyMin ?? .01, setup.equipmentLimits?.pulleyMax ?? 5];
+  const bounds = useMemo(() => extent(setups, profiles), [setups, profiles]);
+  const width = 520, height = view === 'top' ? 270 : 350;
+  const hAxis = view === 'front' ? 1 : 0, vAxis = view === 'top' ? 1 : 2;
+  const center: Point = [(bounds.min[hAxis] + bounds.max[hAxis]) / 2, (bounds.min[vAxis] + bounds.max[vAxis]) / 2];
+  const baseScale = Math.min(460 / Math.max(.5, bounds.max[0] - bounds.min[0]), 460 / Math.max(.5, bounds.max[1] - bounds.min[1]), 272 / Math.max(.5, bounds.max[2] - bounds.min[2]), 192 / Math.max(.5, bounds.max[1] - bounds.min[1]));
+  const chartScale = baseScale * clamp(zoom, .5, 4);
+  const p = (point: Vec3): Point => [width / 2 + (point[hAxis] - center[0] + pan[0]) * chartScale, height / 2 - (point[vAxis] - center[1] + pan[1]) * chartScale];
+  const svgPoint = (event: PointerEvent<SVGElement>): Point => {
+    const matrix = svgRef.current?.getScreenCTM();
+    if (!matrix) return [0, 0];
+    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+    return [point.x, point.y];
+  };
+  const worldAt = (point: Point): Point => [(point[0] - width / 2) / chartScale + center[0] - pan[0], -(point[1] - height / 2) / chartScale + center[1] - pan[1]];
+  const startDrag = (event: PointerEvent<SVGElement>, kind: Drag['kind'], index = 0) => {
+    if (event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    dragRef.current = { kind, index, pointerId: event.pointerId, start: svgPoint(event), setup: { ...setup }, pan: [...pan], scale: chartScale };
+    svgRef.current?.setPointerCapture(event.pointerId); setDragging(true);
+  };
+  const moveDrag = (event: PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current; if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = svgPoint(event), dx = (point[0] - drag.start[0]) / drag.scale, dy = -(point[1] - drag.start[1]) / drag.scale;
+    if (drag.kind === 'pan') { onPanChange?.([drag.pan[0] + dx, drag.pan[1] + dy]); return; }
+    if (drag.kind === 'anchor') {
+      const patch: Partial<Setup> = {};
+      if (view !== 'front') patch.hipX = clamp(drag.setup.hipX + dx, ...distanceBounds);
+      if (view !== 'top') patch.hipHeight = clamp(drag.setup.hipHeight + dy, .15, 1.8);
+      if (view === 'front' || view === 'top') patch.hipY = clamp((drag.setup.hipY ?? 0) + (view === 'front' ? dx : dy), -3, 3);
+      onSetupChange?.(patch); return;
+    }
+    if (drag.kind === 'outlet') {
+      const patch: Partial<Setup> = {};
+      if (drag.setup.outletPositions) {
+        const positions = g.cables.map((cable, i) => [...(drag.setup.outletPositions?.[i] ?? cable.outlet)] as Vec3);
+        const point = positions[drag.index];
+        if (view !== 'front') point[0] = clamp(point[0] + dx, -10, 10);
+        if (view !== 'top') point[2] = clamp(point[2] + dy, 0, 10);
+        if (view === 'front' || view === 'top') point[1] = clamp(point[1] + (view === 'front' ? dx : dy), -10, 10);
+        onSetupChange?.({ outletPositions: positions }); return;
+      }
+      if (view !== 'top') patch.pulleyHeight = clamp(drag.setup.pulleyHeight + dy, ...pulleyBounds);
+      if (view === 'front' || view === 'top') {
+        const lateralDelta = view === 'front' ? dx : dy;
+        if (setup.cables === 2 || !['pullover', 'machine'].includes(definition.id)) {
+          const side = Math.sign(g.cables[drag.index]?.outlet[1] ?? 1) || 1;
+          patch.outletSpacing = clamp(drag.setup.outletSpacing + side * 2 * lateralDelta, .05, 3.5);
+        }
+      }
+      // X is the signed outlet offset; editing it never moves the body or bench.
+      if (view !== 'front') patch.planeOffset = clamp((drag.setup.planeOffset ?? 0) + dx, -2, 2);
+      onSetupChange?.(patch); return;
+    }
+    const target = worldAt(point);
+    let bestAngle = angle, bestDistance = Infinity;
+    // Inverse kinematics follows the same family geometry as the scene, including coupled paths.
+    for (let q = definition.minAngle; q <= definition.maxAngle + .001; q += .5) {
+      const hand = geometry(setup, profile, q).hand;
+      const distance = (hand[hAxis] - target[0]) ** 2 + (hand[vAxis] - target[1]) ** 2;
+      if (distance < bestDistance - 1e-10 || (Math.abs(distance - bestDistance) < 1e-10 && Math.abs(q - angle) < Math.abs(bestAngle - angle))) { bestDistance = distance; bestAngle = q; }
+    }
+    onAngleChange?.(bestAngle);
+  };
+  const endDrag = (event: PointerEvent<SVGSVGElement>) => { if (dragRef.current?.pointerId === event.pointerId) { dragRef.current = null; setDragging(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); } };
+  const line = (a: Vec3, b: Vec3, stroke: string = ink, strokeWidth = 2, extra: Record<string, string | number> = {}) => <line x1={p(a)[0]} y1={p(a)[1]} x2={p(b)[0]} y2={p(b)[1]} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" {...extra} />;
+  const circle = (at: Vec3, r: number, fill: string, stroke = 'none', strokeWidth = 1) => <circle cx={p(at)[0]} cy={p(at)[1]} r={r} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+  const path = (points: Vec3[]) => points.map((point, i) => `${i ? 'L' : 'M'}${p(point).join(',')}`).join(' ');
+  const arrow = (point: Vec3, force: Vec3, gravity = false) => {
+    const length = Math.hypot(...force); if (length < 1e-9) return null;
+    const end = add(point, mul(force, .35 / length));
+    if (Math.hypot(p(end)[0] - p(point)[0], p(end)[1] - p(point)[1]) < 3) return null;
+    return line(point, end, gravity ? '#74658b' : color, 2, { markerEnd: `url(#${id}-${gravity ? 'gravity' : 'arrow'})` });
+  };
+  const handle = (at: Vec3, kind: Drag['kind'], title: string, index = 0) => <g role="button" aria-label={`${label}: ${title}`} tabIndex={0} style={{ cursor: 'grab' }} onPointerDown={event => startDrag(event, kind, index)} onKeyDown={event => {
+    const delta = event.shiftKey ? .05 : .01;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    if (kind === 'angle') onAngleChange?.(clamp(angle + (event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 1), definition.minAngle, definition.maxAngle));
+    const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    const shift = (event.key === 'ArrowUp' || event.key === 'ArrowRight' ? 1 : -1) * delta;
+    if (kind === 'anchor') {
+      if (vertical && view !== 'top') onSetupChange?.({ hipHeight: clamp(setup.hipHeight + shift, .15, 1.8) });
+      if (!vertical && view !== 'front') onSetupChange?.({ hipX: clamp(setup.hipX + shift, ...distanceBounds) });
+      if ((!vertical && view === 'front') || (vertical && view === 'top')) onSetupChange?.({ hipY: clamp((setup.hipY ?? 0) + shift, -3, 3) });
+    }
+    if (kind === 'outlet') {
+      if (setup.outletPositions) {
+        const positions = g.cables.map((cable, i) => [...(setup.outletPositions?.[i] ?? cable.outlet)] as Vec3);
+        const axis = vertical ? (view === 'top' ? 1 : 2) : (view === 'front' ? 1 : 0);
+        positions[index][axis] = clamp(positions[index][axis] + shift, axis === 2 ? 0 : -10, 10);
+        onSetupChange?.({ outletPositions: positions }); return;
+      }
+      if (vertical && view !== 'top') onSetupChange?.({ pulleyHeight: clamp(setup.pulleyHeight + shift, ...pulleyBounds) });
+      else if ((!vertical && view === 'front') || (vertical && view === 'top')) { if (setup.cables === 2 || !['pullover', 'machine'].includes(definition.id)) { const side = Math.sign(g.cables[index]?.outlet[1] ?? 1) || 1; onSetupChange?.({ outletSpacing: clamp(setup.outletSpacing + side * 2 * shift, .05, 3.5) }); } }
+      else if (!vertical) onSetupChange?.({ planeOffset: clamp((setup.planeOffset ?? 0) + shift, -2, 2) });
+    }
+  }}><title>{title} · drag or use arrow keys</title>{circle(at, 14 * fontScale, 'transparent')}{circle(at, 7 * fontScale, 'none', color, 1)}{circle(at, 2.2 * fontScale, color)}</g>;
+  const handTrail = useMemo(() => Array.from({ length: 61 }, (_, i) => geometry(setup, profile, definition.minAngle + (definition.maxAngle - definition.minAngle) * i / 60).hand), [setup, profile, definition.minAngle, definition.maxAngle]);
+  const limbs = g.limbs ?? [ { from: g.hip, to: g.shoulder, kind: 'body' as const }, ...g.shoulders.flatMap((shoulder, i) => [{ from: shoulder, to: g.elbows[i], kind: 'upperArm' as const }, { from: g.elbows[i], to: g.grips[i], kind: 'forearm' as const }]) ];
+  const invalid = result.status === 'contact' || result.status === 'invalid';
+  const title = `${label}: ${view} view. ${setup.name}. ${definition.angleLabel}: ${angle.toFixed(1)} ${definition.angleUnit === 'cm' ? 'centimetres' : 'degrees'}. ${result.status}.`;
+  const interactive = !!(onSetupChange || onAngleChange || onPanChange);
+  const backPolygon = hull(g.backCorners.map(p));
+  const floorY = p([0, 0, 0])[1];
+  const gripLeft = p(g.hand)[0] < p(g.shoulder)[0];
+  const gripLabel: Point = [clamp(p(g.hand)[0] + (gripLeft ? -18 : 18) * fontScale, 65 * fontScale, width - 65 * fontScale), clamp(p(g.hand)[1] - 15 * fontScale, 48, height - 74)];
+  return <svg ref={svgRef} className={`scene-svg scene-${view}`} viewBox={`0 0 ${width} ${height}`} role={interactive ? 'group' : 'img'} aria-label={title} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 'none', touchAction: interactive ? 'none' : 'auto', cursor: dragging ? 'grabbing' : 'default' }}>
+    <title>{title}</title><desc>Orthographic projection of the same 3D geometry used for forces and contact. Outlined points can be dragged or adjusted with arrow keys; numerical controls remain available. Arrow lengths show force directions, not magnitudes. Body outlines are illustrative and do not replace the explicit collision capsules.</desc>
+    <defs>
+      <pattern id={`${id}-grid`} width={.5 * chartScale} height={.5 * chartScale} patternUnits="userSpaceOnUse" x={p([0, 0, 0])[0]} y={p([0, 0, 0])[1]}><path d={`M ${.5 * chartScale} 0 L 0 0 0 ${.5 * chartScale}`} fill="none" stroke="#dbe3ea" strokeWidth=".65" /></pattern>
+      {[['arrow', color], ['gravity', '#74658b']].map(([name, fill]) => <marker key={name} id={`${id}-${name}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L6 3 L0 6 Z" fill={fill}/></marker>)}
+      <pattern id={`${id}-minor-grid`} width={.1 * chartScale} height={.1 * chartScale} patternUnits="userSpaceOnUse" x={p([0, 0, 0])[0]} y={p([0, 0, 0])[1]}><path d={`M ${.1 * chartScale} 0 L 0 0 0 ${.1 * chartScale}`} fill="none" stroke="#e8edf1" strokeWidth=".45"/></pattern>
+      <pattern id={`${id}-floor-hatch`} width="7" height="7" patternUnits="userSpaceOnUse"><path d="M0 7L7 0" fill="none" stroke="#cad5de" strokeWidth=".7"/></pattern>
+      <clipPath id={`${id}-clip`}><rect x="12" y="37" width={width - 24} height={height - 94}/></clipPath>
+    </defs>
+    <rect width={width} height={height} fill="#f3f5f7" onPointerDown={onPanChange ? event => startDrag(event, 'pan') : undefined}/>
+    <rect x="12" y="37" width={width - 24} height={height - 94} fill={`url(#${id}-minor-grid)`} onPointerDown={onPanChange ? event => startDrag(event, 'pan') : undefined}/>
+    <rect x="12" y="37" width={width - 24} height={height - 94} fill={`url(#${id}-grid)`} onPointerDown={onPanChange ? event => startDrag(event, 'pan') : undefined}/>
+    <path d={`M12 32H${width - 12}M12 ${height - 53}H${width - 12}`} fill="none" stroke="#d9e2e9" strokeWidth=".8"/>
+    <rect x="16" y="10" width="17" height="17" rx="3" fill={color}/><text x="24.5" y="22.3" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="700">{label}</text>
+    <text x="42" y="23" fill={muted} fontSize={9 * fontScale} fontFamily="inherit" letterSpacing=".7">{view.toUpperCase()} · {view === 'side' ? 'X–Z' : view === 'front' ? 'Y–Z' : 'X–Y'}</text>
+    <text x={width - 17 - 92 * fontScale} y="23" textAnchor="end" fill={ink} fontSize={10 * fontScale} fontWeight="600" fontFamily="inherit">{Number(angle.toFixed(1))}{definition.angleUnit}{setup.exploration ? ' · exploratory' : ''}</text>
+    <g clipPath={`url(#${id}-clip)`}>
+      {view !== 'top' && <g><rect x="12" y={floorY} width={width - 24} height="7" fill={`url(#${id}-floor-hatch)`}/><line x1="12" y1={floorY} x2={width - 12} y2={floorY} stroke="#a1b3c2" strokeWidth="1.2"/></g>}
+      {g.cables.map((c, i) => <g key={`rail-${i}`}>{view === 'top' ? line([c.outlet[0], bounds.min[1], 0], [c.outlet[0], bounds.max[1], 0], '#a9b9c6', 1, { strokeDasharray: '4 5' }) : <>{line([c.outlet[0], c.outlet[1], 0], [c.outlet[0], c.outlet[1], Math.max(c.outlet[2] + .13, 2.3)], '#8da3b4', 3)}{line([c.outlet[0] - .04, c.outlet[1], 0], [c.outlet[0] - .04, c.outlet[1], Math.max(c.outlet[2] + .13, 2.3)], '#d4dfe7', 1)}</>}</g>)}
+      {definition.id === 'machine' && <g>{line(add(g.shoulder, [-.1, 0, 0]), g.elbow, '#879caa', 5)}{circle(add(g.shoulder, [-.1, 0, 0]), 6, '#d7e1e8', '#728b9d', 1.5)}{circle(g.elbow, 6, '#c2d0dc', '#728b9d', 1)}<text x="18" y={height - 60} fill={muted} fontSize={9 * fontScale}>Mechanism illustrative · resistance unknown</text></g>}
+      {setup.kind === 'bench' && <g><polygon points={backPolygon.map(point => point.join(',')).join(' ')} fill="#d7e1e8" stroke="#8097a8" strokeWidth="1.5" strokeLinejoin="round"/>{line(add(g.hip, [-.09, 0, -.075]), add(g.hip, [.40 * setup.facing, 0, -.075]), '#819aaa', 7)}{line(add(g.hip, [.15 * setup.facing, 0, -.09]), [g.hip[0] + .15 * setup.facing, g.hip[1], .035], '#96aabb', 4)}{line([g.hip[0] - .2, g.hip[1], .035], [g.hip[0] + .5, g.hip[1], .035], '#96aabb', 4)}</g>}
+      {setup.obstacles?.map(obstacle => {
+        const center = obstacle.type === 'box' ? obstacle.center : mul(add(obstacle.a, obstacle.b), .5);
+        const corners = obstacle.type === 'box' ? Array.from({length: 8}, (_, bits) => obstacle.center.map((value, axis) => value + (bits & (1 << axis) ? 1 : -1) * obstacle.size[axis] / 2) as Vec3) : [];
+        return <g key={obstacle.id} data-obstacle={obstacle.id}><title>{obstacle.name || 'Represented obstacle'}</title>
+          {obstacle.type === 'box' ? <polygon points={hull(corners.map(p)).map(point => point.join(',')).join(' ')} fill="#bda982" fillOpacity=".22" stroke="#9c8359" strokeWidth="1.4"/> : line(obstacle.a, obstacle.b, '#9c8359', Math.max(1, obstacle.radius * 2 * chartScale), {opacity: .35})}
+          {annotations && <text x={p(center)[0]} y={p(center)[1] - 7} textAnchor="middle" fill="#806942" fontSize={9 * fontScale}>{obstacle.name || 'Obstacle'}</text>}
+        </g>;
+      })}
+      {setup.bodyCollision && <g opacity=".16">{bodyCapsules(g, setup).map(capsule => <g key={capsule.id}>{line(capsule.a, capsule.b, '#b48b57', Math.max(1, 2 * capsule.radius * chartScale))}{circle(capsule.a, capsule.radius * chartScale, '#b48b57')}{circle(capsule.b, capsule.radius * chartScale, '#b48b57')}</g>)}</g>}
+      {definition.id === 'raise' && setup.tilt !== 0 && <g>{line(g.grips[0], [g.grips[0][0], g.grips[0][1], 0], '#96aabb', 4)}{annotations && <text x={clamp(p(g.grips[0])[0] - 10, 85 * fontScale, width - 18)} y={clamp(p(g.grips[0])[1] - 12, 44, height - 49)} textAnchor="end" fill={muted} fontSize={8 * fontScale}>Support assumed</text>}</g>}
+      <path d={path(handTrail)} stroke={color} strokeWidth="1.2" strokeDasharray="2 5" fill="none" opacity=".38"/>
+      <g opacity={invalid ? .4 : 1}>
+        {g.cables.map((c, i) => <g key={`cable-${i}`}>{line(c.attachment, c.outlet, color, 1.6)}{circle(c.outlet, 5, '#f3f5f7', color, 1.6)}</g>)}
+        {limbs.map((limb, i) => {
+          const body = limb.kind === 'body', arm = limb.kind === 'upperArm' || limb.kind === 'forearm';
+          const breadth = body ? Math.max(13, profile.shoulderWidth * (view === 'side' ? .45 : .75) * chartScale) : Math.max(5, ({body:.18,thigh:.11,shank:.075,foot:.065,upperArm:.08,forearm:.06}[limb.kind] ?? .07) * chartScale);
+          const fill = body ? '#c9d6e0' : arm ? '#3c586d' : '#bacbd8';
+          return <g key={i}><path d={taperedSegment(p(limb.from), p(limb.to), body ? breadth * .72 : breadth, body ? breadth : breadth * .7)} fill={fill} stroke="#425d70" strokeWidth="1.15" strokeLinejoin="round"/>{body && line(limb.from, limb.to, '#eef3f6', .8, {opacity:.6})}{!body && limb.kind !== 'foot' && circle(limb.from, Math.max(2, breadth * .18), '#f5f8fa', '#425d70', 1)}</g>;
+        })}
+        {line(g.shoulder, add(g.shoulder, mul(g.torsoDirection, .09)), ink, 6)}
+        {view !== 'side' && line(g.shoulders[0], g.shoulders[1], '#425d70', Math.max(5, .065 * chartScale))}
+        {circle(g.head, Math.max(6, .095 * chartScale), '#dce5eb', '#425d70', 1.3)}
+        {view !== 'front' && line(add(g.head, mul(g.normal, .07)), add(g.head, mul(g.normal, .13)), ink, 2)}
+        {(g.hasBar ?? definition.id === 'pullover') && line(g.barEnds[0], g.barEnds[1], ink, 3.5)}
+        {g.jointOrigin && circle(g.jointOrigin, 8, 'none', color, 1.1)}
+        {circle(g.hand, 4.5, color, '#f3f5f7', 1.2)}
+        {g.cables.map((c, i) => c.force && <g key={`force-${i}`}>{arrow(c.attachment, c.force)}</g>)}
+        {g.loads?.filter(load => load.kind === 'gravity').map((load, i) => <g key={`gravity-${i}`}>{setup.resistance === 'dumbbell' && g.grips.some(grip => Math.hypot(...grip.map((value, axis) => value - load.point[axis])) < 1e-6) && <>{line(add(load.point, [0, -.045, 0]), add(load.point, [0, .045, 0]), '#74658b', 6)}{circle(load.point, 4, '#74658b')}</>}{arrow(load.point, load.force, true)}</g>)}
+      </g>
+      {result.contact && <g>{circle(result.contact, 8 * fontScale, '#fff1e4', '#b84c22', 1.7)}<text x={p(result.contact)[0]} y={p(result.contact)[1] + 3.5 * fontScale} textAnchor="middle" fontSize={12 * fontScale} fontWeight="700" fill="#b84c22">!</text></g>}
+      {onSetupChange && g.cables.map((c, i) => <g key={`handle-${i}`}>{handle(c.outlet, 'outlet', 'Move cable outlet', i)}</g>)}
+      {onSetupChange && handle(g.hip, 'anchor', setup.kind === 'bench' ? 'Move pelvis and bench anchor' : 'Move pelvis anchor')}
+      {onAngleChange && handle(g.hand, 'angle', definition.id === 'hip' ? 'Move ankle through the exercise' : 'Move hand through the exercise')}
+      {annotations && <><path d={`M${p(g.hand).join(',')}L${gripLabel[0]},${gripLabel[1] + 4}`} fill="none" stroke={color} strokeWidth=".7" opacity=".65"/><text x={gripLabel[0]} y={gripLabel[1]} textAnchor={gripLeft ? 'end' : 'start'} fill={color} stroke="#f3f5f7" strokeWidth="2.5" paintOrder="stroke" fontSize={9 * fontScale} fontFamily="inherit">{definition.id === 'hip' ? 'Ankle' : 'Grip'}</text>{g.cables.length > 0 && <text x={clamp(p(g.cables[0].outlet)[0] + 12, 18, width - 85 * fontScale)} y={clamp(p(g.cables[0].outlet)[1] - 14, 44, height - 49)} fill={muted} fontSize={9 * fontScale} fontFamily="inherit">Outlet</text>}</>}
+    </g>
+    <g aria-hidden="true"><line x1="18" x2="37" y1={height - 38} y2={height - 38} stroke={g.cables.length ? color : '#74658b'} strokeWidth="1.8" markerEnd={`url(#${id}-${g.cables.length ? 'arrow' : 'gravity'})`}/><text x="45" y={height - 34} fill={muted} fontSize={9 * fontScale}>{g.cables.length ? 'Cable direction' : setup.resistance === 'unknown' || definition.id === 'machine' ? 'Force unavailable' : 'Gravity direction'}</text>{g.cables.length > 0 && g.loads?.some(load => load.kind === 'gravity') && <><line x1={170 * fontScale} x2={188 * fontScale} y1={height - 38} y2={height - 38} stroke="#74658b" strokeWidth="1.8" markerEnd={`url(#${id}-gravity)`}/><text x={196 * fontScale} y={height - 34} fill={muted} fontSize={9 * fontScale}>Gravity</text></>}</g>
+    <text x="17" y={height - 12} fill={muted} fontSize={8.5 * fontScale} fontFamily="inherit">{interactive ? 'Drag points · pan background' : 'Orthographic · shared metric scale'}</text>
+    <g stroke={muted} strokeWidth="1"><line x1={width - 23 - .5 * chartScale} x2={width - 23} y1={height - 18} y2={height - 18}/><line x1={width - 23 - .5 * chartScale} x2={width - 23 - .5 * chartScale} y1={height - 21} y2={height - 15}/><line x1={width - 23} x2={width - 23} y1={height - 21} y2={height - 15}/></g>
+    <text x={width - 23 - .25 * chartScale} y={height - 29} textAnchor="middle" fontSize={8 * fontScale} fontFamily="inherit" fill={muted}>50 cm</text>
+  </svg>;
+}
