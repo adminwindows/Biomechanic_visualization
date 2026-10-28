@@ -1,3 +1,4 @@
+import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect } from '@playwright/test';
 
 test('phone landscape keeps both scenes, curves and keyboard controls usable without overflow',async({page})=>{
@@ -22,14 +23,14 @@ test('phone landscape keeps both scenes, curves and keyboard controls usable wit
 });
 
 test('phone landscape supports catalog selection and accessible region tables',async({page})=>{
-  await page.goto('/');await page.locator('#catalog>summary').tap();
+  await page.goto('/');await openDrawer(page,'catalog');
   await page.getByLabel('Search exercises',{exact:true}).fill('lateral raise');
   await expect(page.locator('#catalog .catalog-pick').filter({hasText:'Unilateral cable lateral raise'})).toBeVisible();
   await page.locator('#catalog .catalog-pick').filter({hasText:'Unilateral cable lateral raise'}).tap();
   await expect(page.getByLabel('Configuration A preset',{exact:true})).toHaveValue('raise-cable');
   await expect(page.locator('[data-comparison=incompatible]')).toBeVisible();
   await expect(page.locator('.curve-svg')).toHaveCount(2);
-  const results=page.getByRole('region',{name:'Comparison analysis',exact:true}).getByRole('region',{name:'Scrollable results table'}).first();
+  await openAnalysis(page);const results=page.getByRole('region',{name:'Comparison analysis',exact:true}).getByRole('region',{name:'Scrollable results table'}).first();
   await results.scrollIntoViewIfNeeded();await results.focus();await expect(results).toBeFocused();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(844);
 });

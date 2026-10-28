@@ -1,3 +1,4 @@
+import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { presets, getDefinition } from '../src/engine';
@@ -5,13 +6,13 @@ import { STORAGE_KEY, type LabState } from '../src/state';
 import { LIBRARY_KEY } from '../src/library';
 import { allExerciseEntries } from '../src/allExercises';
 
-const field = (page: Page, label: string) => page.getByRole('spinbutton', {name:`${label} value`,exact:true});
+const field = studioField;
 const setupCard = (page: Page, side:'A'|'B') => page.getByRole('article',{name:`Configuration ${side}`,exact:true});
 const settings = (page: Page, side:'A'|'B') => page.locator(`.settings-card.setup-${side.toLowerCase()}`);
 const savedState = (page: Page) => page.evaluate(key => {try {return JSON.parse(localStorage.getItem(key) ?? 'null') as LabState | null;}catch{return null;}}, STORAGE_KEY);
-async function openDetails(page:Page,side:'A'|'B',title:string){const details=settings(page,side).locator('details').filter({has:page.locator('summary').filter({hasText:title})}).first();if(!await details.evaluate(el=>(el as HTMLDetailsElement).open))await details.locator('summary').first().click();}
-async function drawer(page:Page,id:string){const section=page.locator(`#${id}`);if(!await section.evaluate(el=>(el as HTMLDetailsElement).open))await section.locator('summary').first().click();return section;}
-async function choose(page:Page,side:'A'|'B',id:string){await page.getByLabel(`Configuration ${side} preset`,{exact:true}).selectOption(id);}
+async function openDetails(page:Page,side:'A'|'B',title:string){await openSettingsGroup(page,side,title);}
+async function drawer(page:Page,id:string){return openDrawer(page,id);}
+async function choose(page:Page,side:'A'|'B',id:string){await closeDialog(page);await closeInspector(page);await page.getByLabel(`Configuration ${side} preset`,{exact:true}).selectOption(id);}
 
 test.beforeEach(async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{level:1})).toBeVisible();});
 
@@ -45,16 +46,16 @@ test('loads portable example comparisons directly and preserves the prior compar
   await expect.poll(() => savedState(page)).not.toBeNull();
   const initial = await savedState(page);
   const examples = await drawer(page, 'example-comparisons');
-  await examples.getByRole('button', {name: /^Pullover: change pulley height/}).click();
+  await drawer(page,'example-comparisons');await examples.getByRole('button', {name: /^Pullover: change pulley height/}).click();
   await expect.poll(async () => (await savedState(page))?.criterion).not.toBe(initial?.criterion);
   const pullover = (await savedState(page))!;
   expect(pullover.setups[0].pulleyHeight).not.toBe(pullover.setups[1].pulleyHeight);
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect.poll(async () => (await savedState(page))?.name).toBe(initial?.name);
-  await examples.getByRole('button', {name: /^Lateral raise: cable versus dumbbell/}).click();
+  await drawer(page,'example-comparisons');await examples.getByRole('button', {name: /^Lateral raise: cable versus dumbbell/}).click();
   await expect.poll(async () => (await savedState(page))?.setups[1].resistance).toBe('dumbbell');
   expect((await savedState(page))!.setups[0].model).toBe('raise');
-  await examples.getByRole('button', {name: /^Same height, different arm proportions/}).click();
+  await drawer(page,'example-comparisons');await examples.getByRole('button', {name: /^Same height, different arm proportions/}).click();
   await expect.poll(async () => (await savedState(page))?.lockBody).toBe(false);
   const proportions = (await savedState(page))!;
   expect(proportions.profiles[0].values.height).toBe(proportions.profiles[1].values.height);
@@ -95,19 +96,19 @@ test('searches and favorites catalog entries and retains exercise-list resolutio
   await catalog.locator('.catalog-pick').click();
   await expect(page.getByLabel('Configuration A preset')).toHaveValue('curl-bayesian');
   const training=page.locator('details.workspace-drawer').filter({has:page.locator('summary').filter({hasText:'Your exercise list'})});
-  await training.locator('summary').first().click();
+  await openTraining(page);
   await page.getByLabel('Training exercise list').fill('Low cable curl\npull\nunknown custom exercise');
   await page.getByRole('button',{name:'Match exercises',exact:true}).click();
   await expect(training.locator('.training-row')).toHaveCount(3);
   await page.getByLabel('Match pull',{exact:true}).selectOption('classic');
-  await page.reload();await training.locator('summary').first().click();
+  await page.reload();await openTraining(page);
   await expect(page.getByLabel('Match pull',{exact:true})).toHaveValue('classic');
   await expect(training.locator('.training-row').filter({hasText:'unknown custom exercise'})).toContainText('unrecognized');
 });
 
 test('saves and reloads named comparisons, measured bodies and equipment through a library export',async({page})=>{
-  await openDetails(page,'A','Body profile');await field(page,'A · Upper arm').fill('37');
-  await field(page,'A · Pulley height').fill('205');
+  await openDetails(page,'A','Body profile');await fillField(page, 'A · Upper arm', '37');
+  await fillField(page, 'A · Pulley height', '205');
   const library=await drawer(page,'saved-library');
   await page.getByLabel('Library item name').fill('Personal overhead study');
   await page.getByRole('button',{name:'Save comparison',exact:true}).click();
@@ -116,9 +117,10 @@ test('saves and reloads named comparisons, measured bodies and equipment through
   await expect(library.locator('.saved-row')).toHaveCount(3);
   const snapshot=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)!),LIBRARY_KEY);
   expect(snapshot.bodies[0].profile.provenance.upperArm).toBe('measured');
-  await field(page,'A · Pulley height').fill('180');
-  await library.getByRole('button',{name:'Open',exact:true}).click();
+  await fillField(page, 'A · Pulley height', '180');
+  await drawer(page,'saved-library');await library.getByRole('button',{name:'Open',exact:true}).click();
   await expect(field(page,'A · Pulley height')).toHaveValue('205');
+  await drawer(page,'saved-library');
   const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Export entire library',exact:true}).click();
   const exported=JSON.parse(await readFile((await(await downloadPromise).path())!,'utf8'));
   expect(exported.bodies[0].profile.values.upperArm).toBe(.37);
@@ -134,55 +136,54 @@ test('saves and reloads named comparisons, measured bodies and equipment through
 });
 
 test('distinguishes actual-force locking from matching selected mass and rejects unknown-force locks',async({page})=>{
-  await page.getByLabel('A load entry').selectOption('mass');
-  await field(page,'A · Selected mass').fill('20');await field(page,'A · Force transmission factor').fill('0.5');
-  await page.getByLabel('B load entry').selectOption('mass');
-  await field(page,'B · Force transmission factor').fill('1');
-  await page.getByRole('checkbox',{name:'Same force per attachment',exact:true}).check();
+  await selectSetupOption(page,'A','A load entry','mass');
+  await fillField(page, 'A · Selected mass', '20');await fillField(page, 'A · Force transmission factor', '0.5');
+  await selectSetupOption(page,'B','B load entry','mass');
+  await fillField(page, 'B · Force transmission factor', '1');
+  await setLock(page, 'Same force per attachment', true);
   await expect(field(page,'B · Selected mass')).toHaveValue('10');
-  await field(page,'A · Force transmission factor').fill('0.25');
+  await fillField(page, 'A · Force transmission factor', '0.25');
   await expect(field(page,'B · Selected mass')).toHaveValue('5');
-  await page.getByRole('button',{name:'Match selected mass A → B',exact:true}).click();
+  await clickSetupButton(page,'A','Match selected mass A → B');
   await expect(field(page,'B · Selected mass')).toHaveValue('20');
-  await expect(page.getByRole('checkbox',{name:'Same force per attachment',exact:true})).not.toBeChecked();
-  await settings(page,'A').getByRole('checkbox',{name:'Actual cable force is known',exact:true}).uncheck();
+  await expect(page.getByRole('checkbox',{name:'Same force per attachment',exact:true, includeHidden: true})).not.toBeChecked();
+  await setSetupCheck(page,'A','Actual cable force is known',false);
   await expect(setupCard(page,'A').locator('.status')).toContainText('Resistance not calculated');
-  await page.getByRole('checkbox',{name:'Same force per attachment',exact:true}).click();
-  await expect(page.getByRole('checkbox',{name:'Same force per attachment',exact:true})).not.toBeChecked();
-  await expect(page.getByRole('button',{name:'Set up a controlled pulley comparison',exact:true})).toBeDisabled();
-  await settings(page,'A').getByRole('checkbox',{name:'Actual cable force is known',exact:true}).check();
-  await settings(page,'A').getByRole('checkbox',{name:'Cable explicitly slack',exact:true}).check();
+  await openInspector(page,'A');await page.getByRole('checkbox',{name:'Same force per attachment',exact:true}).click();await closeInspector(page);
+  await expect(page.getByRole('checkbox',{name:'Same force per attachment',exact:true, includeHidden: true})).not.toBeChecked();
+  await openAnalysis(page);await expect(page.getByRole('button',{name:'Set up a controlled pulley comparison',exact:true})).toBeDisabled();
+  await setSetupCheck(page,'A','Actual cable force is known',true);
+  await setSetupCheck(page,'A','Cable explicitly slack',true);
   await expect(setupCard(page,'A').locator('.status')).toContainText('Cable slack');
   await expect(setupCard(page,'A').locator('.moment')).toContainText('0.0');
 });
 
 test('equipment locks synchronize geometry while body edits preserve equipment placement',async({page})=>{
-  await page.getByRole('checkbox',{name:'Same equipment',exact:true}).check();
-  await field(page,'A · Pulley height').fill('210');
+  await setLock(page, 'Same equipment', true);
+  await fillField(page, 'A · Pulley height', '210');
   await expect(field(page,'B · Pulley height')).toHaveValue('210');
-  await openDetails(page,'A','Body profile');await field(page,'A · Torso').fill('65');
+  await openDetails(page,'A','Body profile');await fillField(page, 'A · Torso', '65');
   await expect(field(page,'A · Pulley height')).toHaveValue('210');
   await expect(field(page,'A · Pelvis to pulley plane')).toHaveValue('135');
   await expect(field(page,'B · Pelvis to pulley plane')).toHaveValue('114.5');
-  await page.getByRole('checkbox',{name:'Same equipment',exact:true}).uncheck();
-  await field(page,'A · Pulley height').fill('220');await expect(field(page,'B · Pulley height')).toHaveValue('210');
+  await setLock(page, 'Same equipment', false);
+  await fillField(page, 'A · Pulley height', '220');await expect(field(page,'B · Pulley height')).toHaveValue('210');
 });
 
 test('enforces rigid grip geometry and support without silently stretching segments',async({page})=>{
-  await field(page,'A · Fixed elbow bend').fill('30');
-  await field(page,'A · Grip separation').fill('50');
+  await fillField(page, 'A · Fixed elbow bend', '30');
+  await fillField(page, 'A · Grip separation', '50');
   await expect(setupCard(page,'A').locator('.status')).not.toContainText('Outside physical bounds');
-  await field(page,'A · Grip separation').fill('100');
+  await fillField(page, 'A · Grip separation', '100');
   await expect(setupCard(page,'A').locator('.status')).toContainText('Outside physical bounds');
-  await settings(page,'A').getByRole('button',{name:'Derive grip width from shoulders',exact:true}).click();
+  await clickSetupButton(page,'A','Derive grip width from shoulders');
   await expect(setupCard(page,'A').locator('.status')).not.toContainText('Outside physical bounds');
-  await field(page,'A · Pelvis height').fill('140');
+  await fillField(page, 'A · Pelvis height', '140');
   await expect(setupCard(page,'A').locator('.status')).toContainText('Outside physical bounds');
-  await page.getByLabel('A posture',{exact:true}).focus();
-  await page.getByLabel('A posture',{exact:true}).selectOption('kneeling');
+  await selectSetupOption(page,'A','A posture','kneeling');
   await expect(field(page,'A · Pelvis height')).toHaveValue('49');
   await expect(setupCard(page,'A').locator('.status')).not.toContainText('Outside physical bounds');
-  await page.getByLabel('A posture',{exact:true}).selectOption('seated');
+  await selectSetupOption(page,'A','A posture','seated');
   await expect(field(page,'A · Backrest above floor')).toHaveValue('60');
 });
 
@@ -208,7 +209,7 @@ test('gates incompatible curves and compares only matching complete selected reg
   await expect(page.locator('[data-comparison=incompatible]')).toBeVisible();
   await expect(page.locator('.curve-svg')).toHaveCount(2);
   await expect(page.getByLabel('Synchronization mode').locator('option[value=angle]')).toHaveJSProperty('disabled',true);
-  await expect(page.getByText('These movements use different joint coordinates or force conventions.',{exact:false})).toBeVisible();
+  await openAnalysis(page);await expect(page.getByText('These movements use different joint coordinates or force conventions.',{exact:false})).toBeVisible();
   await choose(page,'A','curl-bayesian');
   await expect(page.locator('.curve-svg')).toHaveCount(1);
   await page.getByLabel('Analysis minimum angle',{exact:true}).fill('40');await page.getByLabel('Analysis minimum angle',{exact:true}).press('Tab');
@@ -217,9 +218,9 @@ test('gates incompatible curves and compares only matching complete selected reg
   await page.getByLabel('Comparison notes').fill('Geometry is calculated; muscle growth remains untested.');
   await expect.poll(async()=> (await savedState(page))?.region).toEqual([40,100]);
   await expect(page.locator('[data-region-shade=true]')).toHaveCount(1);
-  await page.reload();await expect(page.getByLabel('Analysis minimum angle',{exact:true})).toHaveValue('40');
+  await page.reload();await openAnalysis(page);await expect(page.getByLabel('Analysis minimum angle',{exact:true})).toHaveValue('40');
   await expect(page.getByLabel('Comparison notes')).toHaveValue('Geometry is calculated; muscle growth remains untested.');
-  await openDetails(page,'B','Equipment & movement range');await field(page,'B · Minimum position').fill('60');
+  await openDetails(page,'B','Equipment & movement range');await fillField(page, 'B · Minimum position', '60');
   await expect(page.getByText('A comparable region needs the same coordinate interval',{exact:false})).toBeVisible();
   const analysis=page.getByRole('region',{name:'Comparison analysis',exact:true});
   await expect(analysis.locator('table').first().locator('tbody tr').filter({hasText:'Mean resisting moment'}).locator('td').last()).toHaveText('—');
@@ -229,7 +230,7 @@ test('honors reduced motion and preserves manual positioning',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await page.reload();
   await expect(page.getByRole('checkbox',{name:'Reduced motion · manual movement',exact:true})).toBeChecked();
   await expect(page.getByRole('button',{name:'Play animation',exact:true})).toBeDisabled();
-  await field(page,'Upper-arm elevation from torso').fill('170');
+  await fillField(page, 'Upper-arm elevation from torso', '170');
   await expect(field(page,'Upper-arm elevation from torso')).toHaveValue('170');
   await page.getByRole('checkbox',{name:'Reduced motion · manual movement',exact:true}).uncheck();
   await page.getByRole('button',{name:'Play animation',exact:true}).click();
@@ -238,7 +239,7 @@ test('honors reduced motion and preserves manual positioning',async({page})=>{
 });
 
 test('a focused numeric field accepts an external posture update after its draft was committed',async({page})=>{
-  const pelvis=field(page,'A · Pelvis height');
+  await openInspector(page,'A');const pelvis=field(page,'A · Pelvis height');
   await pelvis.fill('140');
   await expect(pelvis).toBeFocused();
   // selectOption intentionally changes another control without moving DOM focus.
@@ -252,26 +253,26 @@ test('a focused numeric field accepts an external posture update after its draft
 test('retains explicit hip segment masses and combines their gravity with cable loading', async ({page}) => {
   await page.goto('/');
   await page.getByLabel('Configuration A preset').selectOption('hip-extension');
-  const settings=page.locator('.settings-card.setup-a');
-  await settings.getByLabel('Include explicitly estimated segment weight',{exact:true}).check();
-  await settings.getByRole('spinbutton',{name:'A · Thigh mass value',exact:true}).fill('5');
-  await settings.getByRole('spinbutton',{name:'A · Lower-leg mass value',exact:true}).fill('3');
-  await page.getByRole('heading',{level:1}).click();
+  await openInspector(page,'A');const settings=page.locator('.settings-card.setup-a');
+  await setSetupCheck(page,'A','Include explicitly estimated segment weight',true);
+  await fillField(page,'A · Thigh mass','5');
+  await fillField(page,'A · Lower-leg mass','3');
+  await closeInspector(page);
   await expect.poll(async()=>page.evaluate(()=>JSON.parse(localStorage.getItem('exercise-biomechanics-lab.comparison.v1')||'null')?.setups[0].thighMass)).toBe(5);
   await page.reload();
-  await expect(settings.getByRole('spinbutton',{name:'A · Thigh mass value',exact:true})).toHaveValue('5');
-  await expect(settings.getByRole('spinbutton',{name:'A · Lower-leg mass value',exact:true})).toHaveValue('3');
+  await expect(field(page,'A · Thigh mass')).toHaveValue('5');
+  await expect(field(page,'A · Lower-leg mass')).toHaveValue('3');
   await expect(page.locator('.setup-card.setup-a .moment')).not.toContainText('—');
 });
 
 test('retains explicit bar length through saving and body edits', async ({page}) => {
   await page.goto('/');
-  const settings=page.locator('.settings-card.setup-a');
-  await settings.getByRole('spinbutton',{name:'A · Bar length value',exact:true}).fill('120');
-  await settings.locator('summary').filter({hasText:'Body profile'}).click();
-  await settings.getByRole('spinbutton',{name:'A · Shoulder width value',exact:true}).fill('45');
-  await page.getByRole('heading',{level:1}).click();
+  await openInspector(page,'A');const settings=page.locator('.settings-card.setup-a');
+  await fillField(page,'A · Bar length','120');
+  await openSettingsGroup(page,'A','Body profile');
+  await fillField(page,'A · Shoulder width','45');
+  await closeInspector(page);
   await expect.poll(async()=>page.evaluate(()=>JSON.parse(localStorage.getItem('exercise-biomechanics-lab.comparison.v1')||'null')?.setups[0].barLength)).toBe(1.2);
   await page.reload();
-  await expect(settings.getByRole('spinbutton',{name:'A · Bar length value',exact:true})).toHaveValue('120');
+  await expect(field(page,'A · Bar length')).toHaveValue('120');
 });

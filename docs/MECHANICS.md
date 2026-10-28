@@ -108,17 +108,35 @@ Closed-chain pull-ups, push-ups, squats and related paths therefore do not acqui
 
 ## Machine profiles
 
-Machine A/B profiles use a separate input-angle contract. Supported mechanisms include a plate-loaded lever, ideal cable/belt transmission, supplied effective cam arm, specified four-bar linkage and supplied/measured angle–force or angle–moment data.
+Machine A/B profiles use a separate input-angle contract. Supported mechanisms include a plate-loaded lever, ideal cable/belt transmission, supplied effective cam arm, specified four-bar linkage, supplied/measured data curves and user-defined resistance formulas.
 
 - Lever moment follows plate gravity at the entered radius/offset.
 - Cable/belt moment uses actual tension × drum radius × declared travel ratio, with winding sign.
 - A cam uses supplied effective moment-arm samples; a schematic drawing does not reconstruct its physical outline.
 - A four-bar mechanism requires closure and a nonsingular transmission derivative. Its load geometry is explicit; bearing friction and unspecified link mass are excluded.
-- Data curves use linear interpolation within their supplied domain. Lifting and lowering are distinct branches. No branch or out-of-domain value is fabricated. Supplied absolute uncertainty is interpolated as a bound, not converted into statistical confidence.
+- Data curves interpolate values and declared uncertainty linearly within each supplied branch. Lifting and lowering remain distinct; a missing branch and out-of-domain values stay unavailable.
 
-Theoretical examples remain theoretical. Measured/supplied curves retain source, machine identity and protocol metadata. A force profile remains in N until a signed machine-input moment arm is supplied. Machine pivot moment is not human-joint moment.
+A force profile stays in N until a signed machine-input moment arm is supplied. Directly entered moment-curve values already use the declared reference-action sign. Reversing that action reverses stored moment values, or the signed arm for a force curve. Machine pivot moment is not human-joint moment.
 
-An optional conversion uses the declared relation `machineAngle = ratio × jointAngle + offset`, giving `jointMoment = machineMoment × ratio` by virtual work. Alignment/ratio and a justification are required. This is a conditional equivalent external contribution, not an internal joint load or a general model of human-machine contact. A/B overlays additionally require compatible units/action and confirmed coordinate equivalence.
+### Runtime resistance formulas
+
+The profile domain and displayed input angle remain in degrees. A formula declares whether its variable `q` receives radians or degrees. `sin`, `cos` and `tan` take radians; `sind`, `cosd` and `tand` take degrees. Arithmetic, powers, parentheses, `abs`, `sqrt`, `exp`, `log`, `min`, `max`, `pow` and `clamp` are supported, with constants `pi` and `e`. Named parameters retain values, unit text and descriptions; unit text documents assumptions but does not perform dimensional analysis.
+
+A moment expression returns signed input resistance in N·m **against increasing input angle**. The engine multiplies it by `referenceAction` to obtain resistance against the selected action. A force expression returns a nonnegative magnitude in N; with an explicit signed arm `r`, the displayed moment is `referenceAction × force × r`. The arm's sign also refers to increasing input angle. Without it, no shaft or human-joint moment is inferred.
+
+[machineFormula.ts](../src/machineFormula.ts) parses a bounded arithmetic grammar without JavaScript evaluation, object access or arbitrary functions. Limits include 2,048 expression characters, 512 tokens, depth 32 and 32 parameters. Invalid syntax rejects the profile. Undefined operations, nonfinite/intermediate values exceeding magnitude `1e12`, and negative force outputs make the evaluated position unavailable. The declared domain is enforced without extrapolation.
+
+The plot connects adjacent formula samples only when conservative interval arithmetic can establish that their entire span is defined and within the numerical/force constraints. This detects poles and domain holes between finite sampled endpoints. An unresolved interval also breaks the line: a gap alone does not prove a physical singularity, and the independently evaluated endpoint can still be valid. Formulas specify resistance, not machine geometry. The default `mass × gravity × radius × cos(q)` fixture is explicitly theoretical; a documented supplied formula is not a measured calibration.
+
+### Raw calibration records
+
+[machineCalibration.ts](../src/machineCalibration.ts) imports outward/lifting and return/lowering CSV independently. Columns are `angle,value,uncertainty,repeat`, with the last two optional. Each supplied branch needs at least two distinct angles. Values may be N or kgf for force, or N·m or kgf·m for moment; angles may be degrees or radians. Conversion uses the conventional **1 kgf = 9.80665 N**, separately from the example engines' rounded gravitational acceleration of 9.81 m/s². Stack mass in kg is not an attachment-force measurement. Moment readings must already use the declared machine-input axis and reference-action sign.
+
+Readings at the same converted angle are averaged. The record separately retains count, mean, sample standard deviation (`n−1` denominator), standard error (`SD / sqrt(n)`), half-range and instrument allowance. The allowance is the maximum of the declared instrument value and that angle's supplied row uncertainties, after unit conversion. The user selects SD, standard error, half-range or instrument-only presentation. **Displayed spread = selected repeat statistic + instrument allowance**; it is neither a confidence interval nor a guaranteed error bound. Repeat statistics require at least two readings per angle. With one reading, instrument-only mode requires a positive supplied allowance, and SD/standard error remain unknown. Repeats do not establish instrument accuracy or independent sampling.
+
+Raw rows, units, method, machine identity, source and measurement protocol travel with the profile, library and workspace export. Statistics are recomputed from those rows on import. A curve claiming to match its calibration must agree with the reconstructed means/spreads; manual curve or reference-sign edits mark the retained record as describing the original import. Reapplying raw calibration rebuilds both branches. No return branch, reading or measurement precision is invented. Unapplied curve, formula and raw-import drafts survive workspace navigation and block guarded capture/export until applied or discarded; ordinary browser reload does not preserve unfinished text.
+
+An optional human-joint conversion uses `machineAngle = ratio × jointAngle + offset`, giving `jointMoment = machineMoment × ratio` by virtual work. Alignment/ratio and a justification are required. This is a conditional equivalent external contribution, not an internal joint load or a general model of human-machine contact. A/B overlays additionally require compatible units/action and confirmed coordinate equivalence.
 
 ## Integration, search and evidence
 

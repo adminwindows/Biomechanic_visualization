@@ -1,5 +1,9 @@
 /** Independent machine-shaft models. SI quantities; input coordinate in degrees. */
-export type MachineMechanism = 'lever' | 'cable' | 'cam' | 'linkage' | 'curve';
+import { validateMachineFormula, evaluateMachineFormula, formulaIntervalSafe, type MachineFormula } from './machineFormula';
+import { validateMachineCalibration, type MachineCalibration } from './machineCalibration';
+export type { MachineFormula, FormulaParameter } from './machineFormula';
+export type { MachineCalibration } from './machineCalibration';
+export type MachineMechanism = 'lever' | 'cable' | 'cam' | 'linkage' | 'curve' | 'formula';
 export type MachineBranch = 'lifting' | 'lowering';
 export type MachinePoint = { angle: number; value: number; uncertainty: number };
 export type MachineProfile = {
@@ -11,6 +15,8 @@ export type MachineProfile = {
   cam: { tension: number; sign: 1 | -1; points: MachinePoint[] };
   linkage: { ground: number; input: number; coupler: number; output: number; mass: number; loadRadius: number; phase: number; assembly: 1 | -1 };
   curve: { quantity: 'moment' | 'force'; lifting: MachinePoint[]; lowering: MachinePoint[]; forceMomentArm: number | null };
+  formula?: MachineFormula;
+  calibration?: MachineCalibration;
   joint: { mode: 'none' | 'aligned' | 'ratio'; ratio: number; offset: number; assumption: string };
 };
 export type Point2 = [number, number];
@@ -58,13 +64,14 @@ export function createMachineProfile(mechanism: MachineMechanism = 'lever'): Mac
     cam: { tension: 150, sign: 1, points: [{ angle: 10, value: 0.08, uncertainty: 0 }, { angle: 55, value: 0.16, uncertainty: 0 }, { angle: 100, value: 0.10, uncertainty: 0 }] },
     linkage: { ground: 0.6, input: 0.25, coupler: 0.6, output: 0.4, mass: 15, loadRadius: 0.3, phase: 0, assembly: 1 },
     curve: { quantity: 'moment', lifting: [], lowering: [], forceMomentArm: null },
+    ...(mechanism==='formula'?{formula:{expression:'mass * gravity * radius * cos(q)',angleUnit:'radians' as const,quantity:'moment' as const,forceMomentArm:null,parameters:[{name:'mass',value:20,unit:'kg',description:'Illustrative plate mass; not a measured machine load.'},{name:'gravity',value:9.81,unit:'m/s²',description:'Rounded gravitational acceleration for the theoretical reference.'},{name:'radius',value:.4,unit:'m',description:'Illustrative pivot to plate-center distance.'}]}}:{}),
     joint: { mode: 'none', ratio: 1, offset: 0, assumption: '' },
   };
 }
 export function validateMachineProfile(input: unknown): MachineProfile {
   const s = obj(input, 'Machine profile');
   if (s.version !== 1) throw new Error('Unsupported machine profile version.');
-  const mechanism = member(s.mechanism, 'Machine mechanism', ['lever', 'cable', 'cam', 'linkage', 'curve'] as const);
+  const mechanism = member(s.mechanism, 'Machine mechanism', ['lever', 'cable', 'cam', 'linkage', 'curve', 'formula'] as const);
   if (!Array.isArray(s.domain) || s.domain.length !== 2) throw new Error('Machine domain needs two angles.');
   const domain: [number, number] = [finite(s.domain[0], 'Domain start', -180, 360), finite(s.domain[1], 'Domain end', -180, 360)];
   if (domain[0] >= domain[1]) throw new Error('Domain start must be below its end.');
@@ -81,9 +88,23 @@ export function validateMachineProfile(input: unknown): MachineProfile {
     curve: { quantity, lifting: points(v.lifting, 'Lifting curve', quantity === 'force' ? 0 : -10000, 10000), lowering: points(v.lowering, 'Lowering curve', quantity === 'force' ? 0 : -10000, 10000), forceMomentArm: v.forceMomentArm === null ? null : finite(v.forceMomentArm, 'Signed force moment arm', -5, 5) },
     joint: { mode: member(j.mode, 'Joint conversion', ['none', 'aligned', 'ratio']), ratio: finite(j.ratio, 'Machine-to-joint angular ratio', 0.01, 20), offset: finite(j.offset, 'Machine angle offset', -360, 360), assumption: text(j.assumption, 'Joint conversion assumption', 2000) },
   };
+  if(s.formula!==undefined)result.formula=validateMachineFormula(s.formula);
+  if(mechanism==='formula'&&!result.formula)throw new Error('A formula mechanism requires an explicit expression and parameter definition.');
+  if(s.calibration!==undefined){
+    result.calibration=validateMachineCalibration(s.calibration);
+    if(!result.calibration.curveModified&&mechanism==='curve') {
+      const groups=result.calibration.groups;
+      for(const branch of ['lifting','lowering'] as const) {
+        const expected=groups[branch].map(g=>({angle:g.angle,value:g.mean,uncertainty:g.displaySpread}));
+        if(JSON.stringify(expected)!==JSON.stringify(result.curve[branch]))throw new Error('Curve values differ from retained raw calibration. Mark the curve as independently modified or reapply the raw import.');
+      }
+      if(result.curve.quantity!==result.calibration.options.quantity)throw new Error('Curve quantity differs from the retained raw calibration.');
+    }
+  }
   if (!/^[a-zA-Z0-9_-]{1,120}$/.test(result.id)) throw new Error('Profile ID must use letters, digits, underscores or hyphens.');
   if (result.cam.points.some(point => point.uncertainty > point.value)) throw new Error('Cam moment-arm uncertainty must not extend below zero.');
-  if (mechanism !== 'curve' && result.provenance.kind !== 'theoretical') throw new Error('Mechanism calculations are theoretical estimates; measured/supplied status requires an actual data curve.');
+  if (mechanism !== 'curve' && !(mechanism==='formula'&&result.provenance.kind==='supplied') && result.provenance.kind !== 'theoretical') throw new Error('Mechanism calculations are theoretical estimates; measured/supplied status requires an actual data curve.');
+  if(mechanism==='formula'&&result.provenance.kind==='supplied'&&!result.provenance.source.trim())throw new Error('A supplied formula requires its documented source.');
   if (mechanism === 'curve' && (result.curve.lifting.length || result.curve.lowering.length)) {
     if (result.provenance.kind !== 'theoretical' && !result.provenance.source.trim()) throw new Error('Measured or supplied data requires a source or measurement protocol.');
     if (result.provenance.kind === 'measured' && (!result.provenance.brand.trim() || !result.provenance.model.trim())) throw new Error('Measured data requires the machine brand and model.');
@@ -162,6 +183,14 @@ function compute(profile: MachineProfile, angle: number, branch: MachineBranch):
       geometry = pose.points;
       break;
     }
+    case 'formula': {
+      const formula=profile.formula!;
+      const value=evaluateMachineFormula(formula,angle);
+      if(value===null)return blank('invalid','The formula is undefined, nonfinite, negative for a force magnitude, or outside the bounded numerical range at this angle.');
+      if(formula.quantity==='moment')moment=direction*value;
+      else {force=value;if(formula.forceMomentArm!==null)moment=direction*force*formula.forceMomentArm;}
+      break;
+    }
     case 'curve': {
       const rows = profile.curve[branch];
       if (!rows.length) return blank('unknown', `No ${branch} data supplied. A missing branch is not assumed to equal the other direction.`);
@@ -180,13 +209,17 @@ export function evaluateMachine(profile: MachineProfile, angle: number, branch: 
   try { return compute(validateMachineProfile(profile), angle, branch); }
   catch (error) { return blank('invalid', error instanceof Error ? error.message : 'Invalid machine data.'); }
 }
-export function sampleMachine(profile: MachineProfile, branch: MachineBranch = 'lifting', count = 121): Array<MachineResult & { angle: number }> {
+/** Formula samples only connect when the entire intervening interval is certified defined. */
+export function sampleMachine(profile: MachineProfile, branch: MachineBranch = 'lifting', count = 121): Array<MachineResult & { angle: number; connectFromPrevious?:boolean }> {
   if (!Number.isInteger(count) || count < 2 || count > 2001) throw new Error('Sample count must be 2–2001.');
   try {
     const valid = validateMachineProfile(profile);
-    return Array.from({ length: count }, (_, i) => { const angle = valid.domain[0] + i / (count - 1) * (valid.domain[1] - valid.domain[0]); return { angle, ...compute(valid, angle, branch) }; });
+    return Array.from({ length: count }, (_, i) => {
+      const step=(valid.domain[1]-valid.domain[0])/(count-1),angle=valid.domain[0]+i*step;
+      return {angle,...compute(valid,angle,branch),...(valid.mechanism==='formula'?{connectFromPrevious:i===0||formulaIntervalSafe(valid.formula!,angle-step,angle)}:{})};
+    });
   } catch { return []; }
 }
 export function machineOutputUnit(profile: MachineProfile): 'N' | 'N·m' {
-  return profile.mechanism === 'curve' && profile.curve.quantity === 'force' && profile.curve.forceMomentArm === null ? 'N' : 'N·m';
+  return (profile.mechanism === 'curve' && profile.curve.quantity === 'force' && profile.curve.forceMomentArm === null)||(profile.mechanism==='formula'&&profile.formula?.quantity==='force'&&profile.formula.forceMomentArm===null) ? 'N' : 'N·m';
 }

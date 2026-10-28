@@ -58,3 +58,8 @@ describe('portable machine workspaces and calibrated profiles', () => {
   });
 
 });
+
+it('round-trips user formulas and named parameter units without precomputed source models',()=>{
+  const profile=createMachineProfile('formula');profile.formula!.expression='stiffness * q + preload';profile.formula!.parameters=[{name:'stiffness',value:20,unit:'N·m/rad',description:'User-declared input shaft torsional stiffness.'},{name:'preload',value:5,unit:'N·m',description:'User-declared preload resisting increasing input angle.'}];
+  saveMachineProfile(profile);expect(loadMachineLibrary().profiles[0].profile.formula).toEqual(profile.formula);expect(importMachineData(JSON.stringify(profile))).toEqual({kind:'profile',profile});
+});

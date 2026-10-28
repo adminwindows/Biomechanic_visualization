@@ -14,17 +14,17 @@ function PathChart({ data, extent, shared, progress, label }: { data: ReturnType
   const [width, setWidth] = useState(480);
   useEffect(() => { const svg = chartRef.current; if (!svg) return; const resize = () => setWidth(Math.max(260, svg.getBoundingClientRect().width)); resize(); const observer = new ResizeObserver(resize); observer.observe(svg); return () => observer.disconnect(); }, []);
   const max = extent;
-  const color = label === 'A' ? '#007c78' : '#c96b28';
-  const x = (p: number) => 40 + p * (width - 58), y = (v: number) => 90 - v / max * 58;
+  const color = label === 'A' ? '#087f8c' : '#d66a45';
+  const x = (p: number) => 46 + p * (width - 68), y = (v: number) => 90 - v / max * 58;
   let active = false;
   const path = data.map(point => { if (point.value === null) { active = false; return ''; } const command = active ? 'L' : 'M'; active = true; return `${command}${x(point.progress)},${y(point.value)}`; }).join(' ');
   return <svg ref={chartRef} className="compound-curve" data-y-extent={max} data-shared-scale={shared} viewBox={`0 0 ${width} 180`} style={{height:180,padding:0}} role="img" aria-label={`${label} external path resistance in joules per unit progress`}>
-    <title>External contribution along this path · J per unit progress</title><rect x="40" y="30" width={width - 58} height="60" fill="#edf4e9"/><rect x="40" y="90" width={width - 58} height="60" fill="#faf2e8"/>
-    {[-1, 0, 1].map(f => <g key={f}><line x1="40" x2={width - 18} y1={y(f * max)} y2={y(f * max)} stroke="#cbd7c9" strokeDasharray={f ? '3 4' : undefined}/><text x="34" y={y(f * max) + 4} textAnchor="end" fontSize="11" fill="#6b8072">{Math.round(f * max)}</text></g>)}
-    {[0, .25, .5, .75, 1].map(p => <text key={p} x={x(p)} y="166" textAnchor="middle" fontSize="11" fill="#6b8072">{p * 100}%</text>)}
-    <path d={path} fill="none" stroke={color} strokeWidth="2.4"/><line x1={x(progress)} x2={x(progress)} y1="30" y2="150" stroke={color} strokeDasharray="3 4"/>
-    <text x="40" y="17" fontSize="11" fill="#536d5e">Path resistance · J / unit progress</text>
-    {!data.some(p => p.value !== null) && <text x={width / 2} y="82" textAnchor="middle" fontSize="12" fill="#7c7160">No calculated profile</text>}
+    <title>External contribution along this path · J per unit progress</title><rect x="46" y="30" width={width - 68} height="60" fill="#f5f8fa"/><rect x="46" y="90" width={width - 68} height="60" fill="#fbfcfd"/>
+    {[-1, 0, 1].map(f => <g key={f}><line x1="46" x2={width - 22} y1={y(f * max)} y2={y(f * max)} stroke="#dce4eb" strokeDasharray={f ? '3 4' : undefined}/><text x="38" y={y(f * max) + 4} textAnchor="end" fontSize="11" fill="#607383">{Math.abs(f * max) >= 1000 ? `${Number((f * max / 1000).toFixed(1))}k` : Math.round(f * max)}</text></g>)}
+    {[0, .25, .5, .75, 1].map(p => <text key={p} x={x(p)} y="166" textAnchor="middle" fontSize="11" fill="#607383">{p * 100}%</text>)}
+    <path d={path} fill="none" stroke={color} strokeWidth="2.4" strokeDasharray={label === 'B' ? '7 4' : undefined}/><line x1={x(progress)} x2={x(progress)} y1="30" y2="150" stroke={color} strokeDasharray="3 4"/>
+    <text x="46" y="17" fontSize="11" fontWeight="600" fill="#425d70">Path resistance · J / unit progress</text>
+    {!data.some(p => p.value !== null) && <text x={width / 2} y="82" textAnchor="middle" fontSize="12" fill="#607383">No calculated profile</text>}
   </svg>;
 }
 
@@ -110,7 +110,7 @@ export function CompoundLab({ profiles, selection }: Props) {
   const sharedChartScale = getCompoundPreset(state.configs[0]).movement === getCompoundPreset(state.configs[1]).movement;
   const extents = curves.map(data => Math.max(10, ...data.map(point => Math.abs(point.value ?? 0))));
   const chartExtents = sharedChartScale ? [Math.max(...extents), Math.max(...extents)] : extents;
-  const bounds = useMemo(() => { const points: Vec3[] = [[-1.2, -1, 0], [1.2, 1, 2.4]]; state.configs.forEach((config, i) => { for (let j = 0; j <= 10; j++) points.push(...Object.values(compoundGeometry(config, state.profiles[i], j / 10).points)); }); return points; }, [state.configs, state.profiles]);
+  const bounds = useMemo(() => { const points: Vec3[] = []; state.configs.forEach((config, i) => { for (let j = 0; j <= 10; j++) points.push(...Object.values(compoundGeometry(config, state.profiles[i], j / 10).points)); }); return points; }, [state.configs, state.profiles]);
   const groups = [...new Set(compoundPresets.map(p => p.family))];
   const setPosition = (side: 0 | 1, value: number) => { setPlaying(false); apply(next => { next.positions[side] = value; if (next.sync) next.positions[1 - side] = value; }); };
   const saveLibrary = (items: CompoundLibraryEntry[]) => { if (COMPOUND_LIBRARY_KEY in recovery.current) { setNotice('The original unreadable library is protected. Back it up and explicitly replace it before saving new entries.'); return; } libraryRef.current = items; setLibrary(items); try { localStorage.setItem(COMPOUND_LIBRARY_KEY, JSON.stringify(items)); } catch { setNotice('Could not save the named comparison library. Export it before leaving.'); } };

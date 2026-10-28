@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   evaluate,
   presets,
@@ -21,9 +21,9 @@ import { BodyDiagram } from "./BodyDiagram";
 import { OfflineStatus } from "./OfflineStatus";
 import { ExampleComparisons } from "./ExampleComparisons";
 import { saveExerciseDraft, loadExerciseDraft } from "./exerciseDrafts";
-import { DesignExplorer } from "./DesignExplorer";
-import { MachineLab } from "./MachineLab";
-import { CompoundLab } from "./compoundLab";
+const DesignExplorer = lazy(() => import("./DesignExplorer").then(module => ({ default: module.DesignExplorer })));
+const MachineLab = lazy(() => import("./MachineLab").then(module => ({ default: module.MachineLab })));
+const CompoundLab = lazy(() => import("./compoundLab").then(module => ({ default: module.CompoundLab })));
 import { WorkspaceBackup } from "./WorkspaceBackup";
 import { flushWorkspaceEdits } from "./workspaceBackup";
 import { Scene } from "./Scene";
@@ -45,8 +45,28 @@ import {
   type LabState,
 } from "./state";
 
+import { StudioDialog, CommandPalette } from "./StudioDialogs";
+import { Icon } from "./Icon";
+import { reuseModelReferences } from "./stateIdentity";
+import { createComparisonLifecycle } from "./comparisonLifecycle";
+import { outletHeight, withOutletHeight } from "./equipmentGeometry";
+const StudyAssistant = lazy(() => import("./StudyAssistant").then(module => ({ default: module.StudyAssistant })));
+const CalibrationGuide = lazy(() => import("./CalibrationGuide").then(module => ({ default: module.CalibrationGuide })));
+
 type Side = 0 | 1;
-type Workspace = "compare" | "compound" | "machines" | "design";
+type Workspace = "compare" | "compound" | "machines" | "design" | "assistant" | "calibration";
+const workspaceInfo: Record<Workspace, { title: string; label: string; description: string; icon: "compare" | "movement" | "machine" | "search" | "study" | "measure" }> = {
+  compare: { title: "Compare the mechanics.", label: "Joint & exercise comparison", description: "One question. Two setups. See what changes.", icon: "compare" },
+  compound: { title: "Movement studies", label: "Compound movements", description: "Follow the path, the load and the declared supports.", icon: "movement" },
+  machines: { title: "Machine profiles", label: "Machines & measured profiles", description: "Build a mechanism or bring your own resistance data.", icon: "machine" },
+  design: { title: "Explore the possibilities", label: "Find a setup & research", description: "Search placements. Inspect uncertainty. Keep the evidence.", icon: "search" },
+  assistant: { title: "Start with a question", label: "Study planner", description: "Build a controlled experiment and review every assumption.", icon: "study" },
+  calibration: { title: "Measure before you infer", label: "Measure & calibrate", description: "Turn readings into traceable inputs and check the model.", icon: "measure" },
+};
+const workspaceFromHash = (): Workspace => {
+  const name = window.location.hash.slice(1);
+  return Object.hasOwn(workspaceInfo, name) ? name as Workspace : "compare";
+};
 function ArrowIcon({ down = false }: { down?: boolean }) {
   return (
     <svg
@@ -99,13 +119,46 @@ export default function App() {
   const [initial] = useState(loadState);
   const [state, setState] = useState<LabState>(() => constrainMotion(initial.state));
   const [notice, setNotice] = useState(initial.error ?? "");
-  const [workspace, setWorkspace] = useState<Workspace>("compare");
-  const [visited, setVisited] = useState<Workspace[]>(["compare"]);
+  const [workspace, setWorkspace] = useState<Workspace>(workspaceFromHash);
+  const [visited, setVisited] = useState<Workspace[]>(() => [...new Set<Workspace>(["compare", workspaceFromHash()])]);
+  const [dialog, setDialog] = useState<"catalog" | "examples" | "library" | "help" | "command" | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorSide, setInspectorSide] = useState<Side>(0);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const inspectorClose = useRef<HTMLButtonElement>(null);
+  const inspectorOpener = useRef<HTMLElement | null>(null);
+  function closeInspector() {
+    setInspectorOpen(false);
+    requestAnimationFrame(() => {
+      const previous = inspectorOpener.current;
+      if (previous?.isConnected && previous.getClientRects().length) previous.focus();
+      else document.querySelector<HTMLButtonElement>('[aria-label="Edit setup A"]')?.focus();
+    });
+  }
+  function editSetup(side: Side, body = false) {
+    inspectorOpener.current = document.activeElement as HTMLElement;
+    activate("compare"); setInspectorSide(side); setInspectorOpen(true);
+    requestAnimationFrame(() => {
+      inspectorClose.current?.focus();
+      if (body) { const panel = document.querySelector<HTMLDetailsElement>(`#body-profile-${side === 0 ? 'a' : 'b'}`); if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }); } }
+    });
+  }
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setDialog(value => value === 'command' ? null : 'command'); }
+      if (event.key === 'Escape') closeInspector();
+    };
+    const location = () => { const next = workspaceFromHash(); setWorkspace(next); setVisited(previous => previous.includes(next) ? previous : [...previous, next]); setPlaying(false); };
+    window.addEventListener('keydown', keyboard); window.addEventListener('popstate', location); window.addEventListener('hashchange', location);
+    return () => { window.removeEventListener('keydown', keyboard); window.removeEventListener('popstate', location); window.removeEventListener('hashchange', location); };
+  }, []);
   const [workbenchRevision, setWorkbenchRevision] = useState({ compound: 0, machine: 0 });
   const [compoundSelection, setCompoundSelection] = useState<{preset: string; side: Side; nonce: number}>();
   function activate(next: Workspace) {
     setPlaying(false);
     setWorkspace(next);
+    if (window.location.hash !== `#${next}`) window.history.pushState(null, "", `#${next}`);
+    if (next !== "compare") setInspectorOpen(false);
     setVisited(previous => previous.includes(next) ? previous : [...previous, next]);
   }
   const framing = state.viewFraming ?? { view: "side" as const, zoom: 1, pan: [0, 0] as [number, number] };
@@ -129,6 +182,8 @@ export default function App() {
   const [annotations, setAnnotations] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [savingEnabled, setSavingEnabled] = useState(!initial.error);
+  const [comparisonPersistence] = useState(createComparisonLifecycle);
+  const [savingPauseReason, setSavingPauseReason] = useState("The previous saved data could not be restored and has been preserved. This session is not saving over it.");
   const [saved, setSaved] = useState(!initial.error);
   const [history, setHistory] = useState<LabState[]>([]);
   const [future, setFuture] = useState<LabState[]>([]);
@@ -138,7 +193,7 @@ export default function App() {
   stateRef.current = state;
   const profiles = useMemo<[Profile, Profile]>(
     () => [state.profiles[0].values, state.profiles[1].values],
-    [state.profiles],
+    [state.profiles[0].values, state.profiles[1].values],
   );
   const results = state.setups.map((setup, i) =>
     evaluate(setup, profiles[i], state.angles[i]),
@@ -154,9 +209,10 @@ export default function App() {
     try {
       const previous = stateRef.current;
       const draft = clone(previous);
-      const next = constrainMotion(validateState(change(draft) ?? draft));
+      const next = reuseModelReferences(previous, constrainMotion(validateState(change(draft) ?? draft)));
       setHistory((h) => [...h.slice(-49), clone(previous)]);
       setFuture([]);
+      stateRef.current = next;
       setState(next);
     } catch (error) {
       setNotice(
@@ -166,19 +222,32 @@ export default function App() {
       );
     }
   }
+  function persistComparison(): boolean {
+    if (!savingEnabled) return false;
+    const result = comparisonPersistence.write(() => saveState(stateRef.current));
+    if (result === "saved") { setSaved(true); return true; }
+    if (result === "suspended") return false;
+    const message = result === "changed"
+      ? "The saved comparison was cleared or changed outside this tab. Autosave paused to preserve it. Export this session, then reload to use the stored version, or explicitly back up that version and enable saving."
+      : "Browser storage could not preserve this comparison. Autosave paused. Export this session before reloading; retry saving only after storage is available.";
+    setSaved(false); setSavingEnabled(false); setSavingPauseReason(message); setNotice(message);
+    return false;
+  }
   useEffect(() => {
     if (!savingEnabled) return;
     setSaved(false);
-    const timer = window.setTimeout(() => {
-      const success = saveState(state);
-      setSaved(success);
-      if (!success)
-        setNotice(
-          "Could not save this comparison in the browser. Export it to keep a copy.",
-        );
-    }, 250);
+    const timer = window.setTimeout(() => { persistComparison(); }, 250);
     return () => clearTimeout(timer);
   }, [state, savingEnabled]);
+  useEffect(() => {
+    if (!savingEnabled) return;
+    // Preserve rapid live edits only while this tab still owns the stored snapshot.
+    const flush = () => { persistComparison(); };
+    const whenHidden = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", whenHidden);
+    return () => { window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", whenHidden); };
+  }, [savingEnabled]);
   useEffect(() => {
     if (!playing) return;
     const timer = window.setInterval(
@@ -326,6 +395,7 @@ export default function App() {
     if (!preset) return;
     try {
       const previous = stateRef.current;
+      if (previous.setups[side].preset === name) return;
       saveExerciseDraft(side, previous.setups[side], previous.profiles[side], previous.angles[side]);
       const restored = loadExerciseDraft(side, name);
       if (!restored) { chooseSetup(side, preset); return; }
@@ -411,90 +481,19 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="site-header">
-        <a
-          className="brand"
-          href="#workspace"
-          aria-label="Biomechanics Lab home"
-        >
-          <span className="brand-mark">
-            b<span>·</span>
-          </span>
-          <span>
-            BIOMECHANICS<span className="brand-sub">EXERCISE LAB</span>
-          </span>
-        </a>
-        <nav aria-label="Main">
-          <a className="active" href="#workspace">
-            Workspace
-          </a>
-          <a href="#model-notes">Model notes</a>
-        </nav>
-        <span className="version-tag">
-          <i /> Interactive mechanics workspace
-        </span>
-      </header>
-      <main id="workspace">
-        <div className="page-heading">
-          <div>
-            <p className="eyebrow">EXPLORE THE MECHANICS</p>
-            <h1>
-              Understand your setup.
-            </h1>
-            <p className="intro">
-              Explore your exercises. Change the setup. Understand the external
-              resistance.
-            </p>
-          </div>
-          <div className="heading-actions">
-            <button onClick={exportFile}>↓ Export</button>
-            <button onClick={() => fileInput.current?.click()}>↑ Import</button>
-            <input
-              ref={fileInput}
-              hidden
-              aria-label="Import comparison file"
-              type="file"
-              accept=".json,application/json"
-              onChange={(e) => void importFile(e.target.files?.[0])}
-            />
-          </div>
-        </div>
-        <OfflineStatus
-          beforeReload={() => {
-            flushWorkspaceEdits();
-            if (!saveState(stateRef.current))
-              throw new Error(
-                "Could not save your current comparison. Export before updating.",
-              );
-          }}
-        />
-        <div className="workspace-utilities">
-        <ExampleComparisons onLoad={(next) => {
-          activate("compare");
-          setPlaying(false);
-          update(() => ({ ...next, viewFraming: next.viewFraming ?? { view: getDefinition(next.setups[0]).plane, zoom: 1, pan: [0, 0] } }));
-        }} onNotice={setNotice} />
-          <ExerciseCatalog onPick={choosePreset} />
-          <WorkspaceBackup state={state} onNotice={setNotice} onRestored={() => window.location.reload()} />
-        </div>
-        <nav className="workspace-navigation" aria-label="Analysis workspaces">
-          {([
-            ["compare", "Joint & exercise comparison"],
-            ["compound", "Compound movements"],
-            ["machines", "Machines & measured profiles"],
-            ["design", "Find a setup & research"],
-          ] as [Workspace, string][]).map(([id, label]) => <button key={id} aria-pressed={workspace === id} onClick={() => activate(id)}>{label}</button>)}
-        </nav>
-        <div className="shared-profile-bar">
-          <span>Body profiles · A {(profiles[0].height * 100).toFixed(0)} cm · B {(profiles[1].height * 100).toFixed(0)} cm · {state.lockBody ? "linked" : "independent"}</span>
-          <button onClick={() => {
-            activate("compare");
-            requestAnimationFrame(() => {
-              const panel = document.querySelector<HTMLDetailsElement>("#body-profile-a");
-              if (panel) { panel.open = true; panel.scrollIntoView({ block: "start" }); }
-            });
-          }}>Edit body profiles</button>
-        </div>
+      <a className="skip-link" href="#studio-content">Skip to workspace</a>
+      <aside className="studio-rail" aria-label="Application navigation">
+        <a className="studio-brand" href="#compare" onClick={event => { event.preventDefault(); activate("compare"); }} aria-label="Biomechanics Lab home"><img src="/brand-mark.svg" alt=""/><span>BIOMECHANICS<small>LAB / EXERCISE MECHANICS</small></span></a>
+        <button className="rail-search" aria-label="Find a tool or exercise" onClick={() => setDialog("command")}><Icon name="search"/><span>Find anything</span><kbd>⌘ K</kbd></button>
+        <span className="rail-label">WORKSPACES</span>
+        <nav className="studio-navigation" aria-label="Analysis workspaces">{(Object.keys(workspaceInfo) as Workspace[]).map(id => <button key={id} aria-label={workspaceInfo[id].label} aria-current={workspace === id ? "page" : undefined} aria-pressed={workspace === id} onClick={() => activate(id)}><Icon name={workspaceInfo[id].icon}/><span>{({ compare: "Compare", compound: "Movements", machines: "Machines", design: "Explore & research", assistant: "Study planner", calibration: "Measure & calibrate" })[id]}</span>{workspace === id && <i/>}</button>)}</nav>
+        <div className="rail-secondary"><span className="rail-label">YOUR TOOLKIT</span><button onClick={() => setDialog("examples")}><Icon name="study"/>Study starters</button><button onClick={() => setDialog("catalog")}><Icon name="movement"/>Exercise catalog</button><button onClick={() => setDialog("library")}><Icon name="library"/>Library & backup</button><button onClick={() => setDialog("help")}><Icon name="help"/>Model & data guide</button></div>
+        <div className="rail-note"><span className="local-indicator"/>Private by design<small>Work stays in this browser.<br/>Export a backup to keep it.</small></div>
+      </aside>
+      <main id="workspace" className={`studio-main ${inspectorOpen ? "inspector-open" : ""}`}>
+        <header className="studio-topbar"><span className="studio-breadcrumb">WORKSPACE <span>/</span> {workspaceInfo[workspace].label}</span><div className="topbar-actions"><button className="mobile-search" aria-label="Find a tool or exercise" onClick={() => setDialog("command")}><Icon name="search"/></button><button aria-label="New study" title="New study" onClick={() => setDialog("examples")}><Icon name="study"/><span>New study</span></button><button aria-label="Export" title="Export comparison" onClick={exportFile}><Icon name="download"/><span>Export</span></button><button aria-label="Import comparison" onClick={() => fileInput.current?.click()}><Icon name="upload"/><span>Import</span></button></div><input ref={fileInput} hidden aria-label="Import comparison file" type="file" accept=".json,application/json" onChange={event => void importFile(event.target.files?.[0])}/></header>
+        <div className="studio-heading" id="studio-content" tabIndex={-1}><div><span className="studio-kicker">EXERCISE MECHANICS STUDIO</span><h1>{workspaceInfo[workspace].title}</h1><p>{workspaceInfo[workspace].description}</p></div><OfflineStatus beforeReload={() => { if (!savingEnabled) throw new Error("Comparison saving is paused. Export this session or resolve the saved-data conflict before updating."); flushWorkspaceEdits(); if (!persistComparison()) throw new Error("The current comparison could not be saved without replacing other data. Export this session and reload or resolve the storage conflict before updating."); }}/></div>
+        <div className="shared-profile-bar"><span><i/>Body A <strong>{(profiles[0].height * 100).toFixed(0)} cm</strong><span className="profile-separator">/</span>Body B <strong>{(profiles[1].height * 100).toFixed(0)} cm</strong><span className="profile-link">{state.lockBody ? "Linked profiles" : "Independent profiles"}</span></span><button onClick={() => editSetup(0, true)}>Edit body profiles <span aria-hidden="true">↗</span></button></div>
         {notice && <div className="notice" role="status">{notice}<button aria-label="Dismiss message" onClick={() => setNotice("")}>×</button></div>}
         <section hidden={workspace !== "compare"} aria-label="Joint and exercise comparison workspace">
         <div className="study-bar">
@@ -567,9 +566,8 @@ export default function App() {
         </div>
         <p className="comparison-context"><strong>{state.comparisonMode === "controlled" ? "Controlled comparison" : "Practical comparison"}</strong> · {state.criterion || "Define the question and which variables you are changing in the analysis below."}</p>
         {!savingEnabled && (
-          <div className="notice" role="status">
-            The previous saved data could not be restored and has been
-            preserved. This session is not saving over it.
+          <div className="notice recovery-notice" role="status">
+            {savingPauseReason}
             <button
               onClick={() => {
                 try {
@@ -581,6 +579,7 @@ export default function App() {
                       "exercise-biomechanics-lab.recovery." + Date.now(),
                       previous,
                     );
+                  if (!comparisonPersistence.rebase()) throw new Error("Storage could not be read after backing up the original.");
                   setSavingEnabled(true);
                   setNotice(
                     "Previous data backed up in browser storage. Autosave enabled for this comparison.",
@@ -702,6 +701,7 @@ export default function App() {
                           : "2 cables"}
                   </span>
                 </div>
+                <button className="edit-setup-button" onClick={() => editSetup(side)} aria-label={`Edit setup ${letter}`}><Icon name="settings"/>Edit setup</button>
                 <Scene
                   setup={setup}
                   profile={profiles[side]}
@@ -777,24 +777,6 @@ export default function App() {
                         ? "No contact detected with the represented backrest."
                         : "Clearance checks use only the enabled body proxies and obstacles. Balance is not evaluated."))}
                 </p>
-                <div className="quick-settings">
-                  {!setup.outletPositions ? <Field
-                    label={`${letter} · Pulley height`}
-                    value={setup.pulleyHeight * 100}
-                    min={(setup.exploration ? .01 : setup.equipmentLimits?.pulleyMin ?? .05) * 100}
-                    max={(setup.exploration ? 5 : setup.equipmentLimits?.pulleyMax ?? 3) * 100}
-                    unit="cm"
-                    onChange={(v) => setupChange(side, "pulleyHeight", v / 100)}
-                  /> : <p className="small-note">Independent outlet positions · edit each coordinate under Equipment geometry & clearance.</p>}
-                  <Field
-                    label={`${letter} · ${setup.kind === "bench" ? "Backrest above floor" : "Torso from vertical"}`}
-                    value={setup.tilt}
-                    min={setup.kind === "bench" ? 0 : -30}
-                    max={90}
-                    unit="°"
-                    onChange={(v) => setupChange(side, "tilt", v)}
-                  />
-                </div>
               </article>
             );
           })}
@@ -994,7 +976,7 @@ export default function App() {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">THE RESISTANCE PROFILE</p>
-                <h2>Where does the pull change?</h2>
+                <h2>Resistance across the movement</h2>
               </div>
               <div className="legend">
                 <span className="a-text">━ A</span>
@@ -1053,10 +1035,11 @@ export default function App() {
               onClick={() =>
                 update((d) => {
                   d.setups[1] = clone(d.setups[0]);
-                  d.setups[1].pulleyHeight = Math.max(
-                    0.05,
-                    d.setups[0].pulleyHeight - 0.4,
-                  );
+                  const height = outletHeight(d.setups[0]);
+                  const lowest = Math.min(...(d.setups[0].outletPositions?.map(point => point[2]) ?? [height]));
+                  d.setups[1] = withOutletHeight(d.setups[0], height + (lowest >= .45 ? -.4 : .4));
+                  d.comparisonMode = "controlled";
+                  d.criterion = "Only outlet height changes. Body dimensions, force per attachment and movement range are held fixed.";
                   d.profiles[1] = clone(d.profiles[0]);
                   d.angles[1] = d.angles[0];
                   d.lockBody = true;
@@ -1071,23 +1054,20 @@ export default function App() {
             </button>
           </aside>
         </section>
-        <AnalysisPanel state={state} onChange={update} />
-        <SavedWorkspace
-          state={state}
-          onRestore={(next) => {
-            update(() => next);
-            setNotice("Saved comparison restored.");
-          }}
-          onBody={(profile, side) =>
-            update((d) => {
-              d.profiles[side] = profile;
-              if (d.lockBody) d.profiles[side === 0 ? 1 : 0] = clone(profile);
-            })
-          }
-          onEquipment={(setup, side) => chooseSetup(side, setup)}
-          onNotice={setNotice}
-        />
-        <TrainingImport onPick={choosePreset} />
+        <details className="analysis-workbench" open={showAnalysis} onToggle={event => setShowAnalysis(event.currentTarget.open)}><summary><span><Icon name="search"/>Detailed analysis & comparison notes</span><span>Regions · differences · sensitivity</span></summary>{showAnalysis && <AnalysisPanel state={state} onChange={update}/>}</details>
+        </section>
+                {visited.includes("compound") && <section hidden={workspace !== "compound"} aria-label="Compound movement workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><CompoundLab key={workbenchRevision.compound} profiles={profiles} selection={compoundSelection} /></Suspense></section>}
+        {visited.includes("machines") && <section hidden={workspace !== "machines"} aria-label="Machine workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><MachineLab key={workbenchRevision.machine} /></Suspense></section>}
+        {visited.includes("design") && <section hidden={workspace !== "design"} aria-label="Setup search workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><DesignExplorer state={state} onResearchRestore={source => {
+          setWorkbenchRevision(previous => ({ ...previous, [source]: previous[source] + 1 }));
+          setCompoundSelection(undefined);
+          activate(source === "machine" ? "machines" : "compound");
+        }} onApply={next => { update(() => next); activate("compare"); }} /></Suspense></section>}
+        {visited.includes("assistant") && <section hidden={workspace !== "assistant"} aria-label="Study planner workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><StudyAssistant state={state} onApply={next => { update(() => next); activate("compare"); }}/></Suspense></section>}
+        {visited.includes("calibration") && <section hidden={workspace !== "calibration"} aria-label="Measurement and calibration workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><CalibrationGuide state={state} onApply={next => { update(() => next); activate("compare"); }} onOpenMachine={() => activate("machines")}/></Suspense></section>}
+        <footer className="studio-footer"><span>Calculations stay on this device.</span><button onClick={() => setDialog("help")}>Model & data guide</button><span>BIOMECHANICS / LAB</span></footer>
+      </main>
+      <aside className="setup-inspector" aria-label="Setup inspector" hidden={!inspectorOpen}><header className="inspector-heading"><div><span className="overline">PARAMETERS</span><h2>Setup inspector</h2></div><button ref={inspectorClose} aria-label="Close setup inspector" onClick={closeInspector}><Icon name="close"/></button></header><div className="inspector-side-tabs" aria-label="Inspector configuration"><button aria-pressed={inspectorSide === 0} onClick={() => setInspectorSide(0)}>Configuration A</button><button aria-pressed={inspectorSide === 1} onClick={() => setInspectorSide(1)}>Configuration B</button></div><div className="inspector-scroll">
         <section className="settings-section" aria-label="Detailed settings">
           <div className="section-heading">
             <div>
@@ -1192,6 +1172,7 @@ export default function App() {
                 <div
                   key={letter}
                   className={`settings-card setup-${letter.toLowerCase()}`}
+                  hidden={inspectorSide !== side}
                 >
                   <h3>
                     <span className="letter-badge">{letter}</span>
@@ -1260,6 +1241,23 @@ export default function App() {
                   <details open>
                     <summary>Position & cable force</summary>
                     <div className="details-content">
+                  {!setup.outletPositions ? <Field
+                    label={`${letter} · Pulley height`}
+                    value={setup.pulleyHeight * 100}
+                    min={(setup.exploration ? .01 : setup.equipmentLimits?.pulleyMin ?? .05) * 100}
+                    max={(setup.exploration ? 5 : setup.equipmentLimits?.pulleyMax ?? 3) * 100}
+                    unit="cm"
+                    onChange={(v) => setupChange(side, "pulleyHeight", v / 100)}
+                  /> : <p className="small-note">Independent outlet positions · edit each coordinate under Equipment geometry & clearance.</p>}
+                  <Field
+                    label={`${letter} · ${setup.kind === "bench" ? "Backrest above floor" : "Torso from vertical"}`}
+                    value={setup.tilt}
+                    min={setup.kind === "bench" ? 0 : -30}
+                    max={90}
+                    unit="°"
+                    onChange={(v) => setupChange(side, "tilt", v)}
+                  />
+
                       <Field
                         label={`${letter} · Pelvis to pulley plane`}
                         value={setup.hipX * 100}
@@ -1526,14 +1524,29 @@ export default function App() {
             })}
           </div>
         </section>
-        </section>
-        {visited.includes("compound") && <section hidden={workspace !== "compound"} aria-label="Compound movement workspace"><CompoundLab key={workbenchRevision.compound} profiles={profiles} selection={compoundSelection} /></section>}
-        {visited.includes("machines") && <section hidden={workspace !== "machines"} aria-label="Machine workspace"><MachineLab key={workbenchRevision.machine} /></section>}
-        {visited.includes("design") && <section hidden={workspace !== "design"} aria-label="Setup search workspace"><DesignExplorer state={state} onResearchRestore={source => {
-          setWorkbenchRevision(previous => ({ ...previous, [source]: previous[source] + 1 }));
-          setCompoundSelection(undefined);
-          activate(source === "machine" ? "machines" : "compound");
-        }} onApply={next => { update(() => next); activate("compare"); }} /></section>}
+      </div></aside>
+      <StudioDialog open={dialog === "catalog"} title="Exercise catalog" onClose={() => setDialog(null)}><ExerciseCatalog onPick={(side,id) => { choosePreset(side,id); setDialog(null); }}/></StudioDialog>
+      <StudioDialog open={dialog === "examples"} title="Start a study" onClose={() => setDialog(null)}><div className="study-starters-intro"><p>Start from a clear question. Every example includes its inputs, assumptions and comparison criterion.</p><button className="primary-action" onClick={() => { setDialog(null); activate("assistant"); }}><Icon name="study"/>Plan my own question</button></div><ExampleComparisons onLoad={next => { activate("compare"); setPlaying(false); update(() => ({ ...next, viewFraming: next.viewFraming ?? { view: getDefinition(next.setups[0]).plane, zoom: 1, pan: [0,0] } })); setDialog(null); }} onNotice={setNotice}/><button className="text-action" onClick={() => { update(() => createInitialState()); activate("compare"); setDialog(null); setNotice("Example comparison restored. Undo is available."); }}>Reset to the opening comparison</button></StudioDialog>
+      <StudioDialog open={dialog === "library"} title="Library & backup" onClose={() => setDialog(null)}>
+        <SavedWorkspace
+          state={state}
+          onRestore={(next) => {
+            update(() => next); activate("compare"); setDialog(null);
+            setNotice("Saved comparison restored.");
+          }}
+          onBody={(profile, side) =>
+            update((d) => {
+              d.profiles[side] = profile;
+              if (d.lockBody) d.profiles[side === 0 ? 1 : 0] = clone(profile);
+            })
+          }
+          onEquipment={(setup, side) => chooseSetup(side, setup)}
+          onNotice={setNotice}
+        />
+        <TrainingImport onPick={choosePreset} />
+        <WorkspaceBackup state={state} onNotice={setNotice} onRestored={() => { comparisonPersistence.suspend(); setSavingEnabled(false); window.location.reload(); }}/>
+      </StudioDialog>
+      <StudioDialog open={dialog === "help"} title="Model & data guide" onClose={() => setDialog(null)}>
         <section className="model-notes" id="model-notes">
           <div>
             <p className="eyebrow">WHAT THIS MODEL TELLS YOU</p>
@@ -1567,6 +1580,10 @@ export default function App() {
               The comparison notebook separates calculations, estimates,
               evidence and questions for further study.
             </p>
+            <h3>Where the knowledge comes from</h3>
+            <p>The handoff and physics references define the force, moment and work principles. Rigid segments, joint axes, movement paths and starting body proportions are explicit modeling choices, not an experimentally validated digital copy of a person. Your measurements and supplied machine data add observations with their own provenance. Numerical tests check the implemented equations; they do not establish anatomical realism.</p>
+            <h3>Smart tools and data</h3>
+            <p>The Study planner uses local rules and the same mechanics engine. Manual AI exchange only prepares text for you to review and share yourself; no AI service is connected and nothing is uploaded automatically. Imported proposals are constrained, recalculated and reviewed before applying to B. Formula editing and calibration also run locally.</p>
             <h3>Mechanical references</h3>
             <p>
               <a
@@ -1587,24 +1604,15 @@ export default function App() {
             </p>
           </div>
         </section>
-        <footer>
-          <span>
-            BIOMECHANICS LAB <span className="footer-dot">/</span> Exercise
-            exploration workspace
-          </span>
-          <button
-            onClick={() => {
-              update(() => createInitialState());
-              setNotice("Example comparison restored. Undo is available.");
-            }}
-          >
-            Reset to example
-          </button>
-          <span>
-            Your settings stay in this browser. Export to keep a copy.
-          </span>
-        </footer>
-      </main>
+      </StudioDialog>
+      <CommandPalette open={dialog === "command"} onClose={() => setDialog(null)} onExercise={choosePreset} commands={[
+        ...(Object.keys(workspaceInfo) as Workspace[]).map(id => ({ id, label: workspaceInfo[id].label, detail: workspaceInfo[id].description, run: () => activate(id) })),
+        { id: 'examples', label: 'Start a prepared study', detail: 'Pulley height, lateral raises, body proportions', run: () => setDialog('examples') },
+        { id: 'library', label: 'Library & backup', detail: 'Saved work, full export and recovery', run: () => setDialog('library') },
+        { id: 'catalog', label: 'Exercise catalog', detail: 'Filter every modeled exercise', run: () => setDialog('catalog') },
+        { id: 'setup-a', label: 'Edit setup A', detail: 'Body, resistance and equipment geometry', run: () => editSetup(0) },
+        { id: 'setup-b', label: 'Edit setup B', detail: 'Body, resistance and equipment geometry', run: () => editSetup(1) },
+      ]}/>
     </div>
   );
 }

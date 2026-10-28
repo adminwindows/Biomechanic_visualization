@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { goWorkspace } from './studio-helpers';
 
 const KEY = 'biomechanics.machine-workspace.v1';
 async function openMachines(page: import('@playwright/test').Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Machines & measured profiles', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Machine mechanisms & measured profiles' })).toBeVisible();
+  await goWorkspace(page, 'Machines & measured profiles');
+  await expect(page.getByRole('heading', { name: 'Machine profiles', exact: true })).toBeVisible();
 }
 
 test('machine A/B edits, undo, calibration domains, portable import and global flush', async ({ page }) => {
@@ -29,7 +30,7 @@ test('machine A/B edits, undo, calibration domains, portable import and global f
 
   await a.getByLabel('Machine A mechanism', { exact: true }).selectOption('curve');
   await expect(a.locator('.machine-result')).toContainText('Not calculated');
-  await expect(page.getByText('No computable samples in the specified domain', { exact: false })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'A machine profile in N·m', exact: true })).toContainText('No computable samples in this domain');
   await a.getByText('Coordinate, provenance & uncertainty', { exact: true }).click();
   await a.getByLabel('Machine A evidence type', { exact: true }).selectOption('measured');
   await a.getByLabel('Machine brand', { exact: true }).fill('Test rig');
@@ -91,4 +92,51 @@ test('machine fallback keeps unreadable original until a backed-up explicit save
   const data = await page.evaluate(key => Object.keys(localStorage).filter(k => k.startsWith(`${key}.backup.`)).map(k => localStorage.getItem(k)), KEY);
   expect(data).toContain('{unreadable machine original');
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).version, KEY)).toBe(1);
+});
+
+test('runtime formula applies explicit units and parameters, blocks unfinished export, and survives reload',async({page})=>{
+  await openMachines(page);const a=page.locator('.machine-a');
+  await a.getByLabel('Machine A mechanism',{exact:true}).selectOption('formula');
+  await expect(a.locator('.machine-result')).toContainText('60.12 N·m');
+  await a.getByLabel('Machine A formula expression',{exact:true}).fill('mass * gravity * radius * cos(q) + 5');
+  await goWorkspace(page,'Find a setup & research');await page.locator('.research-notebook').waitFor();
+  await goWorkspace(page,'Machines & measured profiles');
+  await expect(a.getByLabel('Machine A formula expression',{exact:true})).toHaveValue('mass * gravity * radius * cos(q) + 5');
+  await page.getByRole('button',{name:'Export machine comparison',exact:true}).click();
+  await expect(page.locator('.machine-notice').first()).toContainText('Apply or discard Machine A formula edits');
+  await a.getByRole('button',{name:'Apply formula A',exact:true}).click();
+  await expect(a.locator('.machine-result')).toContainText('65.12 N·m');
+  const download=page.waitForEvent('download');await a.getByRole('button',{name:'Export profile A',exact:true}).click();
+  let text='';for await(const chunk of (await(await download).createReadStream())!)text+=chunk;
+  expect(JSON.parse(text).formula.expression).toContain('+ 5');expect(JSON.parse(text).formula.parameters[2].unit).toBe('m');
+  await expect.poll(()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)??'null')?.profiles[0].formula?.expression,KEY)).toContain('+ 5');
+  await page.reload();await goWorkspace(page,'Machines & measured profiles');await expect(a.locator('.machine-result')).toContainText('65.12 N·m');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('guided raw calibration keeps repeats, kgf conversion, unknown return branch and portable protocol',async({page})=>{
+  await openMachines(page);const a=page.locator('.machine-a');await a.getByLabel('Machine A mechanism',{exact:true}).selectOption('curve');
+  await a.getByText('Guided import of raw calibration readings',{exact:true}).click();
+  await a.getByLabel('Machine A calibration brand',{exact:true}).fill('Regression fixture');
+  await a.getByLabel('Machine A calibration model',{exact:true}).fill('Synthetic readings only');
+  await a.getByLabel('Machine A calibration source',{exact:true}).fill('Automated theoretical test fixture; no real machine measured');
+  await a.getByLabel('Machine A calibration protocol',{exact:true}).fill('Synthetic repeat rows at two angles to verify conversion and arithmetic; this is not empirical evidence.');
+  await a.getByLabel('Machine A calibration quantity',{exact:true}).selectOption('force');
+  await a.getByLabel('Machine A calibration value unit',{exact:true}).selectOption('kgf');
+  await a.getByLabel('Machine A calibration instrument allowance',{exact:true}).fill('.1');
+  const csv='angle,value,repeat\n20,1,one\n20,3,two\n60,3,one\n60,5,two';
+  await a.getByLabel('Machine A lifting raw CSV',{exact:true}).fill(csv);
+  await goWorkspace(page,'Find a setup & research');await page.locator('.research-notebook').waitFor();
+  await goWorkspace(page,'Machines & measured profiles');
+  await expect(a.getByLabel('Machine A lifting raw CSV',{exact:true})).toHaveValue(csv);
+  await expect(a.getByLabel('Machine A calibration protocol',{exact:true})).toHaveValue('Synthetic repeat rows at two angles to verify conversion and arithmetic; this is not empirical evidence.');
+  await a.getByRole('button',{name:'Apply raw calibration A',exact:true}).click();
+  await a.getByRole('spinbutton',{name:'Machine A · Input angle value',exact:true}).fill('40');
+  await expect(a.locator('.machine-result')).toContainText('29.42 N');
+  await expect(a.getByRole('table')).toContainText('19.613');
+  await a.getByLabel('Machine A branch',{exact:true}).selectOption('lowering');await expect(a.locator('.machine-result')).toContainText('No lowering data supplied');
+  const download=page.waitForEvent('download');await a.getByRole('button',{name:'Export profile A',exact:true}).click();
+  let text='';for await(const chunk of (await(await download).createReadStream())!)text+=chunk;
+  const profile=JSON.parse(text);expect(profile.calibration.liftingCSV).toBe(csv);expect(profile.calibration.options.valueUnit).toBe('kgf');expect(profile.calibration.groups.lifting[0].count).toBe(2);expect(profile.curve.lowering).toEqual([]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

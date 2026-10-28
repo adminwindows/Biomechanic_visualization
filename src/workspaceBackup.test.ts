@@ -6,6 +6,7 @@ import { RESEARCH_KEY, createResearchEntry } from './researchNotebook';
 import { createMachineWorkspace, MACHINE_LIBRARY_KEY, MACHINE_WORKSPACE_KEY } from './machineLibrary';
 import { COMPOUND_KEY, COMPOUND_LIBRARY_KEY, initialCompound } from './compoundState';
 import { parseTraining } from './training';
+import { CALIBRATION_KEY, createCalibrationNotebook } from './calibrationGuide';
 import {
   WORKSPACE_BACKUP_PREFIX, WORKSPACE_FLUSH_EVENT, WORKSPACE_STORAGE_KEYS, WorkspaceRestoreError,
   createWorkspaceBackup, exportRawWorkspaceRecovery, exportWorkspace, flushWorkspaceEdits,
@@ -25,6 +26,7 @@ afterEach(() => vi.unstubAllGlobals());
 function seed() {
   const state = createInitialState();
   memory.set(STORAGE_KEY, JSON.stringify(state));
+  memory.set(CALIBRATION_KEY, JSON.stringify(createCalibrationNotebook()));
   saveComparison(state, 'Named comparison');
   saveExerciseDraft(0, state.setups[0], state.profiles[0], state.angles[0]);
   createResearchEntry(state, { title: 'Recorded hypothesis', classification: 'hypothesis', hypothesis: 'Compare only outlet height', observation: 'No physiology inferred', citations: [] });

@@ -92,7 +92,7 @@ export function DesignExplorer({ state, onApply, onResearchRestore }: Props) {
   }
 
   return <section className="design-explorer" aria-label="Design exploration and research">
-    <details className="design-drawer" id="design-explorer">
+    <details className="design-drawer" id="design-explorer" open>
       <summary><strong>Explore equipment placements</strong><span>Map, constrained search, uncertainty and prescribed-speed power</span></summary>
       <div className="design-content">
         <p>Choose a mechanical objective, then compare several placements. The search varies pulley height and signed pelvis X position only. It keeps the selected body, actual force, force convention, posture and original movement range fixed. With explicit outlets, height shifts all outlets together while preserving their relative positions.</p>

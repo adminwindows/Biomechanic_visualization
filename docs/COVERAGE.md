@@ -36,6 +36,8 @@ The compound library labels its examples as experimental declared mechanics or g
 | Cam | Supplied effective moment-arm samples and tension; interpolation within their domain. The schematic cam is not a recovered physical cam outline. |
 | Multi-link mechanism | Specified four-bar lengths, assembly branch and output load geometry; closure and transmission derivative. Impossible or dead-center configurations remain unavailable. |
 | Measured/supplied profile | Separate angle–force or angle–moment branches, source/measurement protocol, domain and absolute uncertainty; no extrapolation or fabricated missing return branch |
+| Editable formula | Bounded arithmetic expression with named parameters, explicit angle/quantity units and a declared domain; unresolved poles produce gaps, not connecting lines |
+| Raw calibration | Angle/force or angle/moment CSV, repeated readings, lifting/lowering branches, unit conversions and measurement protocol; repeat spread and instrument allowance remain separately recorded |
 | Human-joint conversion | Optional aligned-axis or constant angular-ratio mapping, with a required justification. Without it, machine quantities remain machine quantities. |
 
 Theoretical parameter sets remain labeled theoretical. Measured data requires identifying the machine and source; a source label is not an independent audit of measurement quality. A/B overlays require matching output units, action signs and the user's confirmed coordinate equivalence.
@@ -52,8 +54,13 @@ Theoretical parameter sets remain labeled theoretical. Measured data requires id
 | Placement map and search | Pulley height × pelvis position, explicit objective/floor, whole-ROM geometry/sign checks, multiple trade-off candidates | Finite grid, fixed load/body/original ROM; no universal best exercise |
 | Sensitivity and power | User-specified measurement scenarios and optional prescribed coordinate speed | Sample envelopes are not confidence intervals or guaranteed bounds; quasi-static power excludes inertia |
 | Research notebook | Questions, findings, classifications, scoped citations and immutable joint, compound or machine comparison snapshots | User-entered studies/observations are distinct from calculations; no supplied hypertrophy findings |
+| Study planner and manual AI exchange | Local one-variable studies, selected-context export and strictly validated/recalculated proposals | Limited rules and existing model only; no connected AI or automatic upload; further AI integration awaits discussion |
+| Measure & calibrate | Raw body/equipment/force readings, repeat statistics, zero/known-weight checks, traceable application and notebook backup | User observations are not independent certification; analytical references are not measured validation |
+| Instrument views and exports | Shared metric scale, point inspection, responsive charts, SVG/CSV output, searchable tools and A/B inspectors | Rendering does not add anatomical detail absent from the calculations |
 | Persistence and portability | Drafts, framing, named libraries, individual exports and whole-workspace backup/recovery | Browser storage and explicit files; no automatic cloud synchronization |
 | Offline installation | Prepared production cache, readiness, repair and controlled updates | Browser/PWA support and actual device acceptance; no native package promise |
+
+See [MODEL_PROVENANCE.md](MODEL_PROVENANCE.md) for the evidence behind model inputs and [SMART_TOOLS.md](SMART_TOOLS.md) for the exact boundary of the planner, manual exchange and formulas.
 
 ## Worked workflows
 

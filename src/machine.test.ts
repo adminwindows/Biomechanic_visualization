@@ -114,3 +114,30 @@ describe('measured and supplied profiles', () => {
     for (const row of sampleMachine(p, 'lowering', 13)) expect(row).toEqual({ angle: row.angle, ...evaluateMachine(p, row.angle, 'lowering') });
   });
 });
+
+describe('runtime resistance formulas',()=>{
+  it('reproduces the analytical lever with editable unit-documented parameters',()=>{
+    const p=createMachineProfile('formula');p.domain=[0,180];
+    for(const angle of [0,30,90,150,180])expect(evaluateMachine(p,angle).moment).toBeCloseTo(20*9.81*.4*Math.cos(angle*Math.PI/180),9);
+    p.formula!.parameters.find(x=>x.name==='radius')!.value=.7;expect(evaluateMachine(p,0).moment).toBeCloseTo(20*9.81*.7);
+    p.referenceAction=-1;expect(evaluateMachine(p,0).moment).toBeCloseTo(-20*9.81*.7);
+  });
+  it('keeps force in N until its signed machine-input arm is declared',()=>{
+    const p=createMachineProfile('formula');p.formula={expression:'100 + 20 * sind(q)',angleUnit:'degrees',quantity:'force',forceMomentArm:null,parameters:[]};
+    expect(evaluateMachine(p,90).force).toBeCloseTo(120);expect(evaluateMachine(p,90).moment).toBeNull();p.formula.forceMomentArm=-.2;expect(evaluateMachine(p,90).moment).toBeCloseTo(-24);p.referenceAction=-1;expect(evaluateMachine(p,90).moment).toBeCloseTo(24);
+  });
+  it('leaves undefined samples and points outside the declared domain unavailable',()=>{
+    const p=createMachineProfile('formula');p.domain=[0,90];p.formula!.expression='1 / (q - pi/4)';p.formula!.parameters=[];
+    expect(evaluateMachine(p,45).status).toBe('invalid');expect(evaluateMachine(p,100).status).toBe('outside-domain');expect(sampleMachine(p, 'lifting',3)[1].moment).toBeNull();
+    p.formula!.expression='sqrt(-1)';expect(sampleMachine(p).every(x=>x.moment===null)).toBe(true);
+  });
+  it('preserves old version-one profiles and never labels a function as measured data',()=>{
+    const old=createMachineProfile('lever');expect(validateMachineProfile(JSON.parse(JSON.stringify(old)))).toEqual(old);
+    const p=createMachineProfile('formula');p.provenance.kind='measured';expect(()=>validateMachineProfile(p)).toThrow('theoretical');p.provenance.kind='supplied';expect(()=>validateMachineProfile(p)).toThrow('documented source');p.provenance.source='Documented mathematical model supplied by the user';expect(validateMachineProfile(p).provenance.kind).toBe('supplied');
+  });
+});
+
+it('does not connect finite plotted samples across an off-grid formula pole',()=>{
+  const p=createMachineProfile('formula');p.domain=[0,1];p.formula={expression:'1 / (q - .173)',angleUnit:'degrees',quantity:'moment',forceMomentArm:null,parameters:[]};
+  const samples=sampleMachine(p,'lifting',3);expect(samples.every(s=>s.status==='valid')).toBe(true);expect(samples[1].connectFromPrevious).toBe(false);expect(samples[2].connectFromPrevious).toBe(true);
+});

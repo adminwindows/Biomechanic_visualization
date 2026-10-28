@@ -7,6 +7,7 @@ import {
 } from './machineLibrary';
 import { COMPOUND_KEY, COMPOUND_LIBRARY_KEY, parseCompound, parseCompoundLibrary } from './compoundState';
 import { matchExercise, resolveTrainingMatch } from './training';
+import { CALIBRATION_KEY, validateCalibrationNotebook } from './calibrationGuide';
 
 export const MAX_WORKSPACE_BYTES = 5_000_000;
 export const WORKSPACE_BACKUP_PREFIX = 'exercise-biomechanics-lab.workspace-backup.';
@@ -57,6 +58,7 @@ const stores: readonly StoreDefinition[] = [
   { key: LIBRARY_KEY, label: 'Saved comparisons, bodies and equipment', validate: validateLibrary },
   { key: EXERCISE_DRAFTS_KEY, label: 'Per-exercise drafts', validate: validateExerciseDraftLibrary },
   { key: RESEARCH_KEY, label: 'Saved research notes', validate: validateResearchNotebook },
+  { key: CALIBRATION_KEY, label: 'Measurement drafts and recorded calibration', validate: validateCalibrationNotebook },
   { key: MACHINE_WORKSPACE_KEY, label: 'Machine comparison', validate: validateMachineWorkspace },
   { key: MACHINE_LIBRARY_KEY, label: 'Machine profiles', validate: validateMachineLibrary },
   { key: COMPOUND_KEY, label: 'Compound comparison', validate: value => parseCompound(JSON.stringify(value)) },
@@ -177,7 +179,7 @@ function records(value: unknown): number {
   if (Array.isArray(value)) return value.length;
   const row = value as Record<string, unknown>;
   if (Array.isArray(row.comparisons)) return row.comparisons.length + (row.bodies as unknown[]).length + (row.equipment as unknown[]).length;
-  for (const key of ['drafts', 'entries'] as const) if (Array.isArray(row[key])) return row[key].length;
+  for (const key of ['drafts', 'entries', 'records'] as const) if (Array.isArray(row[key])) return row[key].length;
   if (row.format === 'biomechanics-machine-library' && Array.isArray(row.profiles)) return row.profiles.length;
   return 1;
 }

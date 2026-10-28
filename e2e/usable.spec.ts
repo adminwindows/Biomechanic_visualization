@@ -1,3 +1,4 @@
+import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { BAR_RADIUS, RAD, defaultProfile, presets } from '../src/engine';
 import { createInitialState, STORAGE_KEY, type LabState } from '../src/state';

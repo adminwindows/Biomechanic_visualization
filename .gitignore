@@ -32,7 +32,13 @@ playwright/.cache/
 
 # Personal exports downloaded beside the repository (bundled examples stay tracked)
 /biomechanics-*.json
-/biomechanics-report*.txt
+/biomechanics-*.txt
+/biomechanics-*.csv
+/biomechanics-*.svg
+/machine-*.json
+/compound-*.json
+/calibration-*.json
+/research-*.json
 
 # Operating-system/editor state; retain portable VS Code project configuration
 .DS_Store

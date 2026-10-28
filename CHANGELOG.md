@@ -1,5 +1,15 @@
 # Change history
 
+## 28 October 2026 — Instrument interface, measurement and editable models
+
+Reworked the application into a coherent instrument interface: navy/ivory surfaces, teal A and orange B, self-hosted typography, shared icons and metric graphics. Persistent desktop navigation and phone tabs expose six workspaces. Setup inspectors, prepared-study/library dialogs and keyboard search keep detailed controls reachable without filling the comparison canvas. Responsive curves expose point inspection and SVG/CSV exports. Workspace navigation survives reload; numeric model references are retained for unrelated edits to avoid unnecessary recalculation.
+
+Added guided body/equipment/force measurements with raw readings, provenance, repeat statistics and explicit zero/known-weight checks. Machine calibration accepts raw CSV with repeated observations and separate movement directions. An editable arithmetic formula model declares parameters, units and domains and refuses unsafe expression evaluation or plot interpolation across unresolved singularities. Real observations and fictional examples remain explicitly different.
+
+Added a local, rule-based study planner and an optional manual AI context/proposal exchange. No model service or automatic upload is connected. The exchange previews selected data and accepts one supported geometry change for local recalculation and explicit application. These existing tools are retained; further AI expansion is paused for discussion with the user. See [SMART_TOOLS.md](docs/SMART_TOOLS.md).
+
+Added a recoverable rendering boundary, calibration notebook backups, storage diagnostics and explicit storage-protection requests. Expanded draft guards across machine editors and the planner. Fixed rapid-reload data loss, protected restored/cleared comparisons from stale exit saves, and made recovery actions usable on narrow screens. See [MODEL_PROVENANCE.md](docs/MODEL_PROVENANCE.md) for the separation between physical laws, modeling choices, observations and validation.
+
 ## 28 October 2026 — Unified biomechanics workspaces
 
 Expanded the application around the handoff's whole target catalog. A shared searchable catalog now routes isolated coordinates, compound movements and machine illustrations into their appropriate workspaces. The family-by-family [coverage map](docs/COVERAGE.md) explains what is quantitative, conditional or unknown instead of using a preset count as the measure of completion.

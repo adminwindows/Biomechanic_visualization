@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openDrawer } from './studio-helpers';
 import {
   COMPOUND_KEY,
   COMPOUND_LIBRARY_KEY,
@@ -34,7 +35,7 @@ test('catalog loads a coupled path and keeps edits, copy, swap and undo attached
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await openDetails(page.locator('#catalog'));
+  await openDrawer(page, 'catalog');
   await page.getByLabel('Search exercises', { exact: true }).fill('changing elbow');
   await page.getByLabel('Catalog target', { exact: true }).selectOption('1');
   await page.locator('#catalog .catalog-pick').filter({ hasText: 'Cable pullover · changing elbow angle' }).click();
@@ -182,7 +183,7 @@ test('workspace export refuses stale compound state after a save failure and ret
   await input(page, 'A · Force per active cable').fill('175');
   await input(page, 'A · Force per active cable').press('Tab');
   expect((await state(page))!.configs[0].tension).toBe(120);
-  const backup=page.locator('#workspace-backup'); await openDetails(backup);
+  const backup=await openDrawer(page, 'workspace-backup');
   const downloads: string[]=[]; page.on('download', download => downloads.push(download.suggestedFilename()));
   await backup.getByRole('button', { name:'Export workspace', exact:true }).click();
   await expect(backup.getByRole('alert')).toContainText('Compound workspace:');

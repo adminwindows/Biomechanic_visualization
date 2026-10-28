@@ -1,3 +1,4 @@
+import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { STORAGE_KEY, type LabState } from '../src/state';
@@ -8,19 +9,21 @@ import { COMPOUND_KEY, COMPOUND_LIBRARY_KEY, type CompoundSnapshot } from '../sr
 import { RESEARCH_KEY } from '../src/researchNotebook';
 import { parseWorkspaceBackup, WORKSPACE_STORAGE_KEYS, WORKSPACE_BACKUP_PREFIX } from '../src/workspaceBackup';
 
-const input = (page: Page, label: string) => page.getByRole('spinbutton', { name: `${label} value`, exact: true });
+const input = studioField;
 const stored = <T>(page: Page, key: string): Promise<T | null> => page.evaluate(storageKey => {
   const raw = localStorage.getItem(storageKey);
   return raw === null ? null : JSON.parse(raw);
 }, key);
 const mainState = (page: Page) => stored<LabState>(page, STORAGE_KEY);
 async function openDetails(page: Page, selector: string) {
+  if (selector === '#catalog' || selector === '#workspace-backup') { await openDrawer(page, selector.slice(1)); return; }
+  if (selector.startsWith('#body-profile-')) await openInspector(page, selector.endsWith('b') ? 'B' : 'A');
   const details = page.locator(selector);
   if (!(await details.evaluate(node => (node as HTMLDetailsElement).open))) await details.locator(':scope > summary').click();
 }
 async function workspace(page: Page, name: string) {
   const button = page.getByRole('navigation', { name: 'Analysis workspaces' }).getByRole('button', { name, exact: true });
-  await button.click();
+  await goWorkspace(page, name);
   await expect(button).toHaveAttribute('aria-pressed', 'true');
 }
 async function download(page: Page, button: string) {
@@ -41,13 +44,13 @@ test.beforeEach(async ({ page }) => {
 test('exercise drafts retain setup, measured body and angle across switches and reload; reset restores the example', async ({ page }) => {
   await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
   await page.getByLabel('Synchronization mode', { exact: true }).selectOption('independent');
-  await input(page, 'A · Pulley height').fill('245');
-  await input(page, 'A · Upper-arm elevation from torso').fill('145');
+  await fillField(page, 'A · Pulley height', '245');
+  await fillField(page, 'A · Upper-arm elevation from torso', '145');
   await openDetails(page, '#body-profile-a');
-  await input(page, 'A · Upper arm').fill('38');
+  await fillField(page, 'A · Upper arm', '38');
   await page.getByLabel('Configuration A preset', { exact: true }).selectOption('curl-low');
-  await input(page, 'A · Pulley height').fill('35');
-  await input(page, 'A · Upper arm').fill('40');
+  await fillField(page, 'A · Pulley height', '35');
+  await fillField(page, 'A · Upper arm', '40');
   await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
   await expect(input(page, 'A · Pulley height')).toHaveValue('245');
   await expect(input(page, 'A · Upper arm')).toHaveValue('38');
@@ -62,10 +65,11 @@ test('exercise drafts retain setup, measured body and angle across switches and 
   await expect(input(page, 'A · Pulley height')).toHaveValue('35');
   await openDetails(page, '#body-profile-a');
   await expect(input(page, 'A · Upper arm')).toHaveValue('40');
+  await closeInspector(page);
   await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
   await expect(input(page, 'A · Pulley height')).toHaveValue('245');
   await expect(input(page, 'A · Upper arm')).toHaveValue('38');
-  await page.locator('.settings-card.setup-a').getByRole('button', { name: 'Reset setup preset', exact: true }).click();
+  await clickSetupButton(page, 'A', 'Reset setup preset');
   const original = presets.find(preset => preset.preset === 'classic')!;
   await expect(input(page, 'A · Pulley height')).toHaveValue(String(original.pulleyHeight * 100));
   await expect(input(page, 'A · Upper arm')).toHaveValue('38');
@@ -94,7 +98,7 @@ test('view, zoom and background pan survive reload and portable comparison impor
   await expect(page.getByRole('button', { name: 'Top view', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.toolbar-zoom')).toContainText('140%');
   expect((await mainState(page))!.viewFraming).toEqual(framing);
-  const exported = await download(page, '↓ Export');
+  const exported = await download(page, 'Export');
   expect((JSON.parse(exported.text) as LabState).viewFraming).toEqual(framing);
   await page.getByRole('button', { name: 'Fit', exact: true }).click();
   await page.getByRole('button', { name: 'Side view', exact: true }).click();
@@ -122,7 +126,7 @@ test('whole workspace export flushes current edits and restores every edited wor
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.getByLabel('Comparison name', { exact: true }).fill('Portable shoulder comparison');
-  await input(page, 'A · Pulley height').fill('215');
+  await fillField(page, 'A · Pulley height', '215');
   await workspace(page, 'Compound movements');
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Portable row comparison');
   await page.getByLabel('Compound comparison notes', { exact: true }).fill('External moments only; fixed-trunk row assumption.');
@@ -142,7 +146,7 @@ test('whole workspace export flushes current edits and restores every edited wor
   await workspace(page, 'Machines & measured profiles');
   const oldMachine = await stored<MachineWorkspace>(page, MACHINE_WORKSPACE_KEY);
   await page.getByLabel('Machine A name', { exact: true }).fill('Portable theoretical lever');
-  await input(page, 'Machine A · Plate mass').fill('35');
+  await fillField(page, 'Machine A · Plate mass', '35');
   await page.getByRole('button', { name: 'Save machine A profile', exact: true }).click();
   await expect.poll(async () => (await stored<MachineWorkspace>(page, MACHINE_WORKSPACE_KEY))?.profiles[0].lever.mass).toBe(35);
   await noOverflow(page);
@@ -222,9 +226,10 @@ test('unreadable favorites and exercise mappings stay recoverable while storage 
   await page.reload();
   await openDetails(page, '#catalog');
   await expect(page.locator('#catalog').getByRole('alert')).toContainText('original is retained');
+  await openDrawer(page, 'catalog');
   await page.locator('#catalog .catalog-item > button[aria-pressed]').first().click();
   const training = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: 'Your exercise list' }) });
-  await training.locator(':scope > summary').click();
+  await openTraining(page);
   await expect(training.getByRole('alert')).toContainText('original is retained');
   await training.getByRole('button', { name: 'Match exercises', exact: true }).click();
   expect(await page.evaluate(() => localStorage.getItem('biomechanics.exercise-favorites'))).toBe('{original favorites');
@@ -234,9 +239,11 @@ test('unreadable favorites and exercise mappings stay recoverable while storage 
   expect(raw.entries.find((entry: { key: string }) => entry.key === 'biomechanics.exercise-favorites').raw).toBe('{original favorites');
   expect(raw.entries.find((entry: { key: string }) => entry.key === 'biomechanics.training-matches').raw).toBe('{original mappings');
 
+  await openDrawer(page, 'catalog');
   await page.getByRole('button', { name: 'Preserve original & enable favorites saving', exact: true }).click();
+  await openTraining(page);
   await page.getByRole('button', { name: 'Preserve original & enable exercise mappings saving', exact: true }).click();
-  await expect(page.locator('#catalog').getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('#catalog').getByRole('alert', { includeHidden: true })).toHaveCount(0);
   await expect(training.getByRole('alert')).toHaveCount(0);
   const saved = await stored<string[]>(page, 'biomechanics.exercise-favorites');
   expect(saved).toHaveLength(1);
@@ -250,6 +257,7 @@ test('unreadable favorites and exercise mappings stay recoverable while storage 
       return original.call(this, key, value);
     };
   });
+  await openDrawer(page, 'catalog');
   await page.locator('#catalog .catalog-item > button[aria-pressed]').first().click();
   await expect(page.locator('#catalog').getByRole('alert')).toContainText('Current edits have not been saved');
   expect(await stored(page, 'biomechanics.exercise-favorites')).toEqual(saved);

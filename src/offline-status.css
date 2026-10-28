@@ -1,0 +1,28 @@
+.offline-access { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; color: var(--text-secondary, #607267); font-size: 12px; margin: 8px 0; min-width: 0; }
+.offline-details { flex: 1 1 240px; min-width: 0; border: 0; margin: 0; background: transparent; }
+.offline-details > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 44px; padding: 4px 0; cursor: pointer; list-style: none; font-size: 12px; }
+.offline-details > summary::-webkit-details-marker { display: none; }
+.offline-details > summary::after { content: '⌄'; margin-left: auto; font-size: 15px; }
+.offline-details[open] > summary::after { transform: rotate(180deg); }
+.offline-summary-label { font-size: 11px; opacity: .8; }
+.offline-installed { border: 1px solid var(--border, #d9e0d8); border-radius: 4px; padding: 2px 5px; font-size: 10px; }
+.offline-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #8b968d; }
+.offline-dot-ready { background: #27816b; }
+.offline-dot-error { background: #b56d31; }
+.offline-detail-body { border: 1px solid var(--border, #d9e0d8); border-radius: 8px; padding: 12px 14px; background: var(--surface, #f8faf6); line-height: 1.6; min-width: 0; overflow-wrap: anywhere; }
+.offline-detail-body h3 { font-size: 12px; line-height: 1.5; margin: 0 0 5px; color: var(--text-primary, #334746); }
+.offline-detail-body p { margin: 5px 0 10px; font-size: 12px; line-height: 1.6; }
+.offline-capabilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 8px 18px; }
+.offline-storage, .offline-install { border-top: 1px solid var(--border, #d9e0d8); padding-top: 11px; margin-top: 11px; }
+.offline-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.offline-access button { min-height: 44px; padding: 6px 10px; font-size: 12px; }
+.offline-update { flex: 0 0 auto; }
+.offline-diagnostics { display: grid; gap: 6px; margin: 8px 0; }
+.offline-diagnostics > div { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(0, 1.8fr); gap: 8px; }
+.offline-diagnostics dt { color: var(--text-secondary, #607267); }
+.offline-diagnostics dd { margin: 0; color: var(--text-primary, #334746); }
+.offline-error { color: var(--danger, #98472e); }
+.offline-main-error { flex-basis: 100%; margin: 0 0 4px; }
+.offline-build { font-size: 11px !important; }
+.offline-access :focus-visible { outline: 2px solid var(--accent, #007c78); outline-offset: 3px; }
+@media (max-width: 480px) { .offline-summary-label { margin-left: auto; } .offline-diagnostics > div { grid-template-columns: 1fr; gap: 0; } }
