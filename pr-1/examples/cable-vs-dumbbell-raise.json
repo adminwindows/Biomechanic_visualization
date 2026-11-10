@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "modelVersion": "biomechanics-2",
+  "name": "Lateral raise · cable versus dumbbell",
+  "setups": [
+    {
+      "preset": "raise-cable",
+      "name": "Upright lateral raise · 49.05 N cable",
+      "kind": "standing",
+      "facing": 1,
+      "tilt": 0,
+      "hipX": 0.75,
+      "hipHeight": 0.9,
+      "pulleyHeight": 0.1,
+      "outletSpacing": 0.1,
+      "attachmentSpacing": 0.95,
+      "cables": 1,
+      "tension": 49.05,
+      "elbow": 0,
+      "backLength": 0.82,
+      "backWidth": 0.34,
+      "backThickness": 0.1,
+      "range": [
+        5,
+        120
+      ],
+      "model": "raise",
+      "resistance": "cable",
+      "loadMode": "force",
+      "planeOffset": -0.2,
+      "slack": false,
+      "forceKnown": true,
+      "segmentGravity": false
+    },
+    {
+      "preset": "raise-dumbbell",
+      "name": "Upright lateral raise · 5 kg dumbbell",
+      "kind": "standing",
+      "facing": 1,
+      "tilt": 0,
+      "hipX": 0.75,
+      "hipHeight": 0.9,
+      "pulleyHeight": 0.1,
+      "outletSpacing": 0.1,
+      "attachmentSpacing": 0.95,
+      "cables": 1,
+      "tension": 49.05,
+      "elbow": 0,
+      "backLength": 0.82,
+      "backWidth": 0.34,
+      "backThickness": 0.1,
+      "range": [
+        5,
+        120
+      ],
+      "model": "raise",
+      "resistance": "dumbbell",
+      "loadMode": "force",
+      "loadMass": 5,
+      "planeOffset": -0.2,
+      "slack": false,
+      "forceKnown": true,
+      "segmentGravity": false
+    }
+  ],
+  "profiles": [
+    {
+      "values": {
+        "thigh": 0.43,
+        "shank": 0.43,
+        "foot": 0.24,
+        "pelvisWidth": 0.3,
+        "headNeck": 0.24,
+        "height": 1.75,
+        "upperArm": 0.33,
+        "forearm": 0.27,
+        "hand": 0.1,
+        "torso": 0.59,
+        "shoulderWidth": 0.42
+      },
+      "provenance": {
+        "height": "example",
+        "upperArm": "example",
+        "forearm": "example",
+        "hand": "example",
+        "torso": "example",
+        "shoulderWidth": "example",
+        "thigh": "example",
+        "shank": "example",
+        "foot": "example",
+        "pelvisWidth": "example",
+        "headNeck": "example"
+      },
+      "locked": {
+        "height": false,
+        "upperArm": false,
+        "forearm": false,
+        "hand": false,
+        "torso": false,
+        "shoulderWidth": false,
+        "thigh": false,
+        "shank": false,
+        "foot": false,
+        "pelvisWidth": false,
+        "headNeck": false
+      },
+      "referenceModel": "handoff-illustrative-proportions-v1"
+    },
+    {
+      "values": {
+        "thigh": 0.43,
+        "shank": 0.43,
+        "foot": 0.24,
+        "pelvisWidth": 0.3,
+        "headNeck": 0.24,
+        "height": 1.75,
+        "upperArm": 0.33,
+        "forearm": 0.27,
+        "hand": 0.1,
+        "torso": 0.59,
+        "shoulderWidth": 0.42
+      },
+      "provenance": {
+        "height": "example",
+        "upperArm": "example",
+        "forearm": "example",
+        "hand": "example",
+        "torso": "example",
+        "shoulderWidth": "example",
+        "thigh": "example",
+        "shank": "example",
+        "foot": "example",
+        "pelvisWidth": "example",
+        "headNeck": "example"
+      },
+      "locked": {
+        "height": false,
+        "upperArm": false,
+        "forearm": false,
+        "hand": false,
+        "torso": false,
+        "shoulderWidth": false,
+        "thigh": false,
+        "shank": false,
+        "foot": false,
+        "pelvisWidth": false,
+        "headNeck": false
+      },
+      "referenceModel": "handoff-illustrative-proportions-v1"
+    }
+  ],
+  "angles": [
+    60,
+    60
+  ],
+  "sync": "angle",
+  "lockBody": true,
+  "lockForce": true,
+  "lockEquipment": true,
+  "comparisonMode": "controlled",
+  "criterion": "With the same upright arm path and equal external force magnitudes, how does cable direction versus vertical dumbbell weight redistribute resistance over 20–100°?",
+  "notes": "Both setups use one loaded arm and the same fictional body dimensions, upright torso and fixed straight elbow. A has constant cable tension 49.05 N at its handle; B has a 5 kg dumbbell producing 49.05 N vertically downward (g=9.81). Equal scalar force is not equal force direction, moment, selected stack mass, relative effort, or muscle stimulus. The cable outlet is 10 cm high, X −20 cm; pulley settings retained in B have no physical effect. Body-segment gravity is excluded in both; dumbbell gravity is included in B. Unlike the catalog supported-lean preset, B is upright here to isolate resistance source.",
+  "observation": "Synthetic comparison, not a prescribed load or an estimate of training equivalence.",
+  "region": [
+    20,
+    100
+  ]
+}
