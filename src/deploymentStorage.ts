@@ -29,5 +29,6 @@ export function createDeploymentStorage(
   };
 }
 
-const baseUrl = (import.meta as ImportMeta & { env: { BASE_URL: string } }).env.BASE_URL;
+// Shared state helpers also load in Node-based tooling without Vite's env object.
+const baseUrl = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 export const deploymentStorage = createDeploymentStorage(baseUrl);
