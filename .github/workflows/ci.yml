@@ -1,0 +1,368 @@
+name: Application checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Build and test jobs run without repository-write or deployment permissions.
+# Only same-repository PRs can update the public preview registry.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build, mechanics and browser checks
+    if: ${{ github.event.action != 'closed' }}
+    outputs:
+      tested_sha: ${{ steps.source.outputs.sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Record source provenance
+        id: source
+        run: printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check preview publishing safeguards
+        run: node --test scripts/github-pages.test.mjs
+
+      - name: Check mechanics and persistence
+        id: unit
+        run: npm test
+
+      - name: Build the production application
+        id: build
+        run: npm run build
+
+      - name: Record the exact built files
+        id: record_dist
+        run: |
+          python3 - "$RUNNER_TEMP/biomechanics-dist-hashes.json" <<'PY'
+          import hashlib, json, pathlib, sys
+          root = pathlib.Path('dist')
+          files = {
+              str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in sorted(root.rglob('*')) if path.is_file()
+          }
+          if not files or 'index.html' not in files or 'sw.js' not in files:
+              raise SystemExit('The production application or offline worker is missing.')
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(files, sort_keys=True))
+          PY
+
+      - name: Install Chromium and its system dependencies
+        id: browser_install
+        run: npx playwright install --with-deps chromium
+
+      - name: Check desktop, phone and landscape workflows
+        id: browser
+        run: npm run test:e2e
+
+      # The offline suite temporarily changes production assets and restores them.
+      # Run it after the browser suite, never in parallel with a rebuild.
+      - name: Check production offline and update workflows
+        id: offline
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser_install.outcome == 'success' }}
+        run: npm run test:pwa
+
+      - name: Verify the tests left the build unchanged
+        id: dist_check
+        if: ${{ !cancelled() && steps.record_dist.outcome == 'success' }}
+        run: |
+          python3 - "$RUNNER_TEMP/biomechanics-dist-hashes.json" <<'PY'
+          import hashlib, json, pathlib, sys
+          root = pathlib.Path('dist')
+          expected = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          actual = {
+              str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in sorted(root.rglob('*')) if path.is_file()
+          }
+          changed = sorted(key for key in expected.keys() | actual.keys()
+                           if expected.get(key) != actual.get(key))
+          if changed:
+              raise SystemExit('Production files changed during tests: ' + ', '.join(changed))
+          print(f'All {len(actual)} production files match the original build.')
+          PY
+
+      - name: Upload the exact application build
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.dist_check.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: biomechanics-web-${{ steps.source.outputs.sha }}
+          path: dist/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain failed browser traces
+        if: ${{ !cancelled() && steps.browser.outcome == 'failure' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: browser-failure-${{ steps.source.outputs.sha }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Retain failed offline traces
+        if: ${{ !cancelled() && steps.offline.outcome == 'failure' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: offline-failure-${{ steps.source.outputs.sha }}
+          path: test-results-pwa/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Explain the checked revision and results
+        if: ${{ always() }}
+        env:
+          TESTED_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          UNIT_RESULT: ${{ steps.unit.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          BROWSER_RESULT: ${{ steps.browser.outcome }}
+          OFFLINE_RESULT: ${{ steps.offline.outcome }}
+          INTEGRITY_RESULT: ${{ steps.dist_check.outcome }}
+        run: |
+          python3 <<'PY'
+          import os
+          lines = [
+              '## Biomechanics application checks',
+              '',
+              f"Tested commit: `{os.environ['TESTED_SHA'] or 'checkout did not complete'}`",
+              f"Event/ref: `{os.environ['EVENT_NAME']}` / `{os.environ['SOURCE_REF']}`",
+          ]
+          if os.environ['PR_HEAD_SHA']:
+              lines.extend([
+                  f"PR source head: `{os.environ['PR_HEAD_SHA']}`",
+                  'Pull-request checks use GitHub’s generated merge commit, so they include the target branch.',
+              ])
+          lines.extend(['', '| Check | Result |', '| --- | --- |'])
+          for label, key in [
+              ('Mechanics and persistence', 'UNIT_RESULT'),
+              ('Production build', 'BUILD_RESULT'),
+              ('Desktop, phone and landscape', 'BROWSER_RESULT'),
+              ('Offline preparation and updates', 'OFFLINE_RESULT'),
+              ('Build unchanged after tests', 'INTEGRITY_RESULT'),
+          ]:
+              lines.append(f"| {label} | {os.environ[key] or 'not run'} |")
+          lines.extend([
+              '',
+              'A successful build with a matching integrity check is retained for seven days as an application artifact, even if a test failed. Check the results above before using it.',
+              'The artifact is a download of static application files; it is **not a hosted preview URL**.',
+              'Browser emulation and numerical tests do not establish physical-device behavior or anatomical validity.',
+          ])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n'.join(lines) + '\n')
+          PY
+
+  preview_build:
+    name: Build and check the public PR preview
+    needs: verify
+    if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_BASE_PATH: /${{ github.event.repository.name }}/pr-${{ github.event.pull_request.number }}/
+    steps:
+      - name: Check out the exact checked merge commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.tested_sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build for this PR's public URL
+        run: npm run build
+      - name: Install Chromium and its system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Check nested URLs, offline access and preview isolation
+        id: preview_check
+        run: PREVIEW_BUILD_DIR=dist npm run test:preview
+      - name: Retain failed preview traces
+        if: ${{ !cancelled() && steps.preview_check.outcome == 'failure' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-failure-${{ needs.verify.outputs.tested_sha }}
+          path: test-results/preview/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload the checked preview build
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pages-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  preview_registry:
+    name: Register or remove this PR preview
+    needs: [verify, preview_build]
+    if: ${{ always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'closed' || needs.preview_build.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      publish: ${{ steps.registry.outputs.publish }}
+    steps:
+      - name: Check out the publishing script
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.tested_sha || github.event.pull_request.base.sha }}
+          persist-credentials: false
+      # Before the infrastructure is merged, the base branch has no publisher.
+      # Later, using the base first supports old PR heads lacking that script.
+      - name: Use the PR publisher when the base has no publishing script
+        if: ${{ github.event.action == 'closed' && hashFiles('scripts/github-pages.mjs') == '' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Download the checked preview build
+        if: ${{ github.event.action != 'closed' }}
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: pages-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: preview-artifact
+      - name: Update the aggregate registry with conflict retries
+        id: registry
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          TESTED_SHA: ${{ needs.verify.outputs.tested_sha }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const { updateRegistry } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/github-pages.mjs`).href);
+            await updateRegistry({ github, context, core, artifactRoot: `${process.env.GITHUB_WORKSPACE}/preview-artifact` });
+
+  publish_previews:
+    name: Publish current public previews
+    needs: [verify, preview_registry]
+    if: ${{ always() && !cancelled() && (needs.preview_registry.outputs.publish == 'true' || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.verify.result == 'success')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      pages: write
+      id-token: write
+    # Every publisher reads the latest full registry after acquiring this lock.
+    # GitHub may replace a pending publisher, but its registered build is retained.
+    concurrency:
+      group: github-pages-public-previews
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.preview_url.outputs.url }}
+    steps:
+      - name: Check out the publishing script
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.tested_sha || github.event.pull_request.base.sha }}
+          persist-credentials: false
+      # Before the infrastructure is merged, the base branch has no publisher.
+      # Later, using the base first supports old PR heads lacking that script.
+      - name: Use the PR publisher when the base has no publishing script
+        if: ${{ github.event.action == 'closed' && hashFiles('scripts/github-pages.mjs') == '' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      # Pages must first be enabled with Source = GitHub Actions in repo settings.
+      # Enabling it automatically requires a separate administrative token.
+      - name: Read GitHub Pages configuration
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Assemble all current previews from the latest registry
+        id: site
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const { prepareSite } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/github-pages.mjs`).href);
+            await prepareSite({ github, context, core, outputRoot: `${process.env.RUNNER_TEMP}/pages-site` });
+      - name: Upload the complete Pages site
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ${{ runner.temp }}/pages-site
+          retention-days: 1
+      - name: Deploy the complete Pages site
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+      - name: Verify the public site serves the deployed registry
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          REGISTRY_SHA: ${{ steps.site.outputs.registry_sha }}
+          PREVIEW_PATH: ${{ steps.site.outputs.preview_path }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib, time, urllib.request
+          base = os.environ['PAGE_URL'].rstrip('/') + '/'
+          expected = os.environ['REGISTRY_SHA']
+          expected_html = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'pages-site' / os.environ['PREVIEW_PATH'] / 'index.html').read_bytes()
+          for attempt in range(12):
+              try:
+                  request = urllib.request.Request(base + 'previews.json?registry=' + expected, headers={'Cache-Control': 'no-cache'})
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      metadata = json.load(response)
+                  if metadata['registry'] != expected:
+                      raise ValueError('The public CDN still serves a previous registry.')
+                  target = base + os.environ['PREVIEW_PATH']
+                  with urllib.request.urlopen(target + '?registry=' + expected, timeout=20) as response:
+                      html = response.read()
+                  if html != expected_html:
+                      raise ValueError('The public preview HTML does not match the deployed build yet.')
+                  print(f'Confirmed published registry {expected} and preview HTML at {target}')
+                  break
+              except Exception:
+                  if attempt == 11:
+                      raise
+                  time.sleep(5)
+          PY
+      - name: Link the published preview
+        id: preview_url
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PREVIEW_PATH: ${{ steps.site.outputs.preview_path }}
+        run: |
+          python3 <<'PY'
+          import os
+          from urllib.parse import urljoin
+          base = os.environ['PAGE_URL'].rstrip('/') + '/'
+          preview = urljoin(base, os.environ['PREVIEW_PATH'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'url={preview}\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write(f'## Public GitHub Pages preview\n\n[Open the published preview]({preview})\n\n[All current PR previews]({base})\n\nThese URLs are publicly accessible. The source head and tested merge commit are recorded in the preview index.\n')
+          PY
