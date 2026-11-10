@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { createMachineProfile, validateMachineProfile, type MachineProfile, type MachineBranch } from './machine';
 export const MACHINE_LIBRARY_KEY = 'biomechanics.machine-library.v1';
 export const MACHINE_WORKSPACE_KEY = 'biomechanics.machine-workspace.v1';

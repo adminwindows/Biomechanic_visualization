@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { STORAGE_KEY, validateState, type LabState } from './state';
 import { LIBRARY_KEY, validateLibrary } from './library';
 import { EXERCISE_DRAFTS_KEY, validateExerciseDraftLibrary } from './exerciseDrafts';

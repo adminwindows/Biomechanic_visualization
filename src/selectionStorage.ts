@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { validateWorkspaceBackup } from './workspaceBackup';
 
 export type SelectionKey = 'biomechanics.exercise-favorites' | 'biomechanics.training-list' | 'biomechanics.training-matches';

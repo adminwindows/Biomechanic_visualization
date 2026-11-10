@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { MODEL_VERSION } from './engine';
 import { validateState, type LabState } from './state';
 import { COMPOUND_KEY, parseCompound, type CompoundSnapshot } from './compoundState';

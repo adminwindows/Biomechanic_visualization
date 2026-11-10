@@ -1,8 +1,20 @@
-# Verification record — 28 October 2026
+# Verification record
 
 The application covers the handoff's target exercise families and its comparison, machine, search, research and offline workflows. [COVERAGE.md](COVERAGE.md) describes the contract and limits of each model; [ACCEPTANCE.md](ACCEPTANCE.md) maps all 26 product acceptance criteria. A catalog entry is not a claim of validated anatomy or measured commercial-machine resistance.
 
-## Automated checks
+## GitHub preview infrastructure — 10 November 2026
+
+The initial GitHub-hosted [Application checks run](https://github.com/adminwindows/Biomechanic_visualization/actions/runs/42800845695) passed the complete **498-unit, 120-browser and 7-production-offline** suites for source head `bd8d220`. This confirms the CI pipeline runs on GitHub, independently of the ChatGPT workspace.
+
+The subsequent preview-isolation implementation passed **503 unit/persistence tests across 27 files**, the production TypeScript/build check, all **7 root offline/update workflows**, and **2 nested-path production workflows** locally. The nested suite also passed against a prebuilt artifact at a different PR path. It verifies self-hosted assets and fonts, bundled examples, every lazy workspace offline, distinct saved comparisons and cache retention across a root installation and two previews on the same origin. A closed sibling tab's cache is preserved when the root worker activates.
+
+GitHub checks the submitted revision again before publishing it. The workflow also exercises publisher conflict, freshness and cleanup safeguards, then checks the live registry metadata and preview HTML after deployment. See the PR's latest **Checks** and successful deployment for the actual published revision. A pending setup or failed deployment must not be described as a live preview. [GITHUB_TESTING.md](GITHUB_TESTING.md) records the one-time repository settings and publication contract.
+
+The owner approved public GitHub Pages previews. The separate ChatGPT Site remains owner-private. These hosting changes do not add scientific validation or change the mechanical models.
+
+## Application verification — 28 October 2026
+
+### Automated checks
 
 The final TypeScript/production build passed. The numerical and persistence suite passed **498 tests across 26 files**. All **7 current production offline workflows** are verified, including first opening every lazy-loaded workspace while disconnected and refusing an update while an unreadable comparison is protected. Production file hashes were identical before and after the update/cache fixtures.
 
@@ -21,13 +33,13 @@ The checks include:
 
 The browser runs use system Chromium through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium`. Interactive tests exercise Vite's development server; the offline suite exercises the built production assets. Browser emulation does not replace physical-device acceptance.
 
-## Collision and unavailable-result checks
+### Collision and unavailable-result checks
 
 Backrest regressions include a contact interval around 196.100°–196.175° missed by regular 0.5° samples and exact tangency. The expanded body/equipment suite checks a narrow obstacle contact at 160.173°, between regular samples, through evaluation, curves and usable intervals. Body capsules rendered in the scene use the same geometry as the collision calculations. Continuous conservative classification marks unresolved boundary cells unavailable rather than declaring them clear.
 
 Travel-limit regressions include an unavailable interval narrower than the ordinary sample step. Unknown resistance, unsupported geometry, contact and singular cable directions are not filled in with zero values. These checks establish behavior for represented shapes and prescribed paths, not clearance against omitted structures or soft tissue.
 
-## Timing observation
+### Timing observation
 
 Ten pulley-input updates per viewport were measured in development Chromium after visiting all six workspaces, without CPU throttling, from the dispatched input event through the second animation frame. At 1440 px the median was **71.9 ms** and maximum **261.8 ms**; at 360 px the median was **65.6 ms** and maximum **307.5 ms**. The final persisted pulley value was checked, so this measured actual model updates. No browser tests ran concurrently with this observation. The inspector was open and full detailed analysis was closed.
 
@@ -35,7 +47,7 @@ All six workspaces were also checked at 1440 × 1000 and 360 × 800: no horizont
 
 These are limited development-environment observations. Tail latency still exceeds the 100 ms target; no claim of smooth performance on the user's physical Android device is made. An earlier observation of 66.7/91.3 ms medians belonged to the previous interface and a different mounted-workspace state, so it is not a controlled before/after benchmark.
 
-## Evidence still requiring real-world input
+### Evidence still requiring real-world input
 
 - Installation, OS cache retention, touch behavior and sustained performance on a particular physical Android phone.
 - Personal anthropometry, mobility, comfort and repeatability measurements.

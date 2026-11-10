@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 export type OfflinePhase =
   | "checking"
   | "preparing"

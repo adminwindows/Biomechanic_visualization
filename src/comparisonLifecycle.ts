@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { STORAGE_KEY } from './state';
 
 export type ComparisonWriteResult = 'saved' | 'changed' | 'unavailable' | 'failed' | 'suspended';

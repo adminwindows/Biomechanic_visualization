@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { deploymentStorage as localStorage } from "./deploymentStorage";
 import {
   evaluate,
   presets,
@@ -52,6 +53,8 @@ import { createComparisonLifecycle } from "./comparisonLifecycle";
 import { outletHeight, withOutletHeight } from "./equipmentGeometry";
 const StudyAssistant = lazy(() => import("./StudyAssistant").then(module => ({ default: module.StudyAssistant })));
 const CalibrationGuide = lazy(() => import("./CalibrationGuide").then(module => ({ default: module.CalibrationGuide })));
+
+const deploymentBase = (import.meta as ImportMeta & { env: { BASE_URL: string } }).env.BASE_URL;
 
 type Side = 0 | 1;
 type Workspace = "compare" | "compound" | "machines" | "design" | "assistant" | "calibration";
@@ -483,7 +486,7 @@ export default function App() {
     <div className="app-shell">
       <a className="skip-link" href="#studio-content">Skip to workspace</a>
       <aside className="studio-rail" aria-label="Application navigation">
-        <a className="studio-brand" href="#compare" onClick={event => { event.preventDefault(); activate("compare"); }} aria-label="Biomechanics Lab home"><img src="/brand-mark.svg" alt=""/><span>BIOMECHANICS<small>LAB / EXERCISE MECHANICS</small></span></a>
+        <a className="studio-brand" href="#compare" onClick={event => { event.preventDefault(); activate("compare"); }} aria-label="Biomechanics Lab home"><img src={`${deploymentBase}brand-mark.svg`} alt=""/><span>BIOMECHANICS<small>LAB / EXERCISE MECHANICS</small></span></a>
         <button className="rail-search" aria-label="Find a tool or exercise" onClick={() => setDialog("command")}><Icon name="search"/><span>Find anything</span><kbd>⌘ K</kbd></button>
         <span className="rail-label">WORKSPACES</span>
         <nav className="studio-navigation" aria-label="Analysis workspaces">{(Object.keys(workspaceInfo) as Workspace[]).map(id => <button key={id} aria-label={workspaceInfo[id].label} aria-current={workspace === id ? "page" : undefined} aria-pressed={workspace === id} onClick={() => activate(id)}><Icon name={workspaceInfo[id].icon}/><span>{({ compare: "Compare", compound: "Movements", machines: "Machines", design: "Explore & research", assistant: "Study planner", calibration: "Measure & calibrate" })[id]}</span>{workspace === id && <i/>}</button>)}</nav>

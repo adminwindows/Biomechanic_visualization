@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { MODEL_VERSION, type Setup } from './engine';
 import {
   MAX_IMPORT_BYTES, preserveModelBackup, validateProfile, validateSetup, validateState,

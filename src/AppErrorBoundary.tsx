@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 type RecoveryStorage = Pick<Storage, 'length' | 'key' | 'getItem'>;

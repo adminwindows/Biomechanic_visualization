@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { validateState, type LabState } from "./state";
 
+const base = (import.meta as ImportMeta & { env: { BASE_URL: string } }).env.BASE_URL;
+const exampleURL = (file: string) => `${base}examples/${file}.json`;
+
 const examples = [
   { file: "pullover-pulley-height", title: "Pullover: change pulley height", description: "Hold the body, force and movement range constant; compare cable direction and leverage." },
   { file: "cable-vs-dumbbell-raise", title: "Lateral raise: cable versus dumbbell", description: "Match force magnitude per attachment and inspect how its direction changes the moment curve." },
@@ -12,7 +15,7 @@ export function ExampleComparisons({ onLoad, onNotice }: { onLoad: (state: LabSt
   async function load(file: string) {
     setLoading(true);
     try {
-      const response = await fetch(`/examples/${file}.json`);
+      const response = await fetch(exampleURL(file));
       if (!response.ok) throw new Error("Example could not be loaded. Reconnect or prepare offline access.");
       const state = validateState(await response.json());
       onLoad(state);
@@ -29,7 +32,7 @@ export function ExampleComparisons({ onLoad, onNotice }: { onLoad: (state: LabSt
       <p className="small-note">Load a complete comparison, then change one setting. These use fictional dimensions and explicit load assumptions. Your previous comparison remains available through Undo.</p>
       <div className="catalog-list">{examples.map(example => <div className="catalog-item" key={example.file}>
         <button className="catalog-pick" disabled={loading} onClick={() => void load(example.file)}><strong>{example.title}</strong><span>{example.description}</span></button>
-        <a href={`/examples/${example.file}.json`} download aria-label={`Download ${example.title}`}>JSON</a>
+        <a href={exampleURL(example.file)} download aria-label={`Download ${example.title}`}>JSON</a>
       </div>)}</div>
     </div>
   </details>;

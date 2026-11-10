@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PROFILE_KEYS, type LabState } from './state';
 import { analyticalLeverReference, applyMeasurement, CALIBRATION_KEY, CALIBRATION_MAX_BYTES, createMeasurementDraft, createMeasurementRecord, EQUIPMENT_MEASUREMENTS, loadCalibrationNotebook, mergeCalibrationNotebooks, parseCalibrationNotebook, saveCalibrationNotebook, summarizeMeasurement, validateCalibrationNotebook, type CalibrationNotebook, type MeasurementCategory, type MeasurementDraft, type MeasurementRecord, type MeasurementUnit, type ReferenceDraft } from './calibrationGuide';

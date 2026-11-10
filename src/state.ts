@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import {
   defaultProfile, presets, MODEL_VERSION, compatible, getDefinition, actualForce,
   type Profile, type Setup,

@@ -65,7 +65,7 @@ On the first production load, wait for **Offline ready** before disconnecting. I
 
 ## GitHub checks and previews
 
-Pull-request updates run the **Application checks** workflow: numerical tests, production build, desktop/phone browser workflows and offline checks. Results appear in the PR’s **Checks** tab, with deployable build output and failure traces attached to the workflow run. An Actions artifact is not a runnable website. Public/private PR preview hosting is a separate decision; the existing hosted app keeps its current access. [GITHUB_TESTING.md](docs/GITHUB_TESTING.md) explains the options and setup boundaries.
+Pull-request updates run **Application checks**: numerical/persistence tests, production build, desktop/phone browser workflows and offline checks. Successful same-repository PRs then receive public GitHub Pages previews, with a separate URL, saved-data namespace and offline cache for each PR. Results and successful deployment links appear in GitHub; an Actions artifact alone is only a download. The existing ChatGPT Site keeps its current private access. [GITHUB_TESTING.md](docs/GITHUB_TESTING.md) explains the one-time Pages settings, automated publication, access and cleanup behavior.
 
 ## Development
 
@@ -78,6 +78,7 @@ npm test
 npm run build
 npm run test:e2e
 npm run test:pwa  # Build first; production offline/update checks
+npm run test:preview  # Nested-path production and cross-preview isolation checks
 npm run preview
 ```
 

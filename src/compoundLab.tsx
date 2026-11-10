@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Profile, Vec3 } from './engine';
 import { Field } from './Field';

@@ -1,3 +1,4 @@
+import { deploymentStorage as localStorage } from './deploymentStorage';
 import { MODEL_VERSION, PROFILE_KEYS, PROFILE_BOUNDS, editMeasurement, validateState, type LabState } from './state';
 import { actualForce, forceToSetup } from './engine';
 import { createMachineProfile, evaluateMachine } from './machine';
