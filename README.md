@@ -63,6 +63,10 @@ On the first production load, wait for **Offline ready** before disconnecting. I
 
 [ACCEPTANCE.md](docs/ACCEPTANCE.md) maps the handoff requirements and [VERIFICATION.md](docs/VERIFICATION.md) records the checks actually run. Phone emulation is distinct from installation, storage retention and performance on a physical Android device. Source changes and test definitions alone are not evidence of a completed device or physiological validation.
 
+## GitHub checks and previews
+
+Pull-request updates run the **Application checks** workflow: numerical tests, production build, desktop/phone browser workflows and offline checks. Results appear in the PR’s **Checks** tab, with deployable build output and failure traces attached to the workflow run. An Actions artifact is not a runnable website. Public/private PR preview hosting is a separate decision; the existing hosted app keeps its current access. [GITHUB_TESTING.md](docs/GITHUB_TESTING.md) explains the options and setup boundaries.
+
 ## Development
 
 Use Node.js 22.12+ and npm. The hosted app is the normal feedback route; local commands are for development.
