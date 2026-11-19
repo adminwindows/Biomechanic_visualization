@@ -17,7 +17,7 @@ test("serves a complete production preview, including first-use workspaces witho
   page.on("pageerror", error => errors.push(error.message));
   page.on("response", response => { if (response.status() >= 400) missing.push(response.url()); });
   await ready(page, base.href);
-  expect(await page.locator(".studio-brand img").evaluate(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0)).toBe(true);
+  expect(await page.locator(".compare-brand img").evaluate(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0)).toBe(true);
   const resources = await page.evaluate(async () => {
     await document.fonts.ready;
     return performance.getEntriesByType("resource").map(entry => new URL(entry.name).pathname);

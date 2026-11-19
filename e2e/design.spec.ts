@@ -137,7 +137,8 @@ test('compound research snapshots restore their captured path and body instead o
   await selectCompound(page, 'pullover-coupled');
   await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Recorded coupled path');
-  const force = page.getByRole('spinbutton', { name: 'A · Force per active cable value', exact: true });
+  const force = page.getByLabel('A · Force per active cable value', { exact: true });
+  await revealControl(force);
   await force.fill('143'); await force.blur();
   await goWorkspace(page, 'Explore setup changes');
   const notebook = page.locator('.research-notebook'); await notebook.locator('summary').first().click();

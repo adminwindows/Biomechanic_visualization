@@ -134,8 +134,8 @@ test('whole workspace export flushes current edits and restores every edited wor
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Portable row comparison');
   await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison notes', { exact: true }).fill('External moments only; fixed-trunk row assumption.');
-  await openDetails(page, '.compound-library');
-  await page.locator('.compound-library').getByRole('button', { name: 'Save named copy', exact: true }).click();
+  await revealControl(page.getByText('Save named copy', { exact: true }));
+  await page.getByRole('button', { name: 'Save named copy', exact: true }).click();
   await noOverflow(page);
 
   await workspace(page, 'Explore setup changes');
@@ -192,7 +192,7 @@ test('whole workspace export flushes current edits and restores every edited wor
   await workspace(page, 'Compound exercises');
   await expect(page.getByLabel('Compound comparison name', { exact: true })).toHaveValue('Portable row comparison');
   await expect(page.getByLabel('Compound comparison notes', { exact: true })).toHaveValue('External moments only; fixed-trunk row assumption.');
-  await openDetails(page, '.compound-library');
+  await revealControl(page.getByText('Save named copy', { exact: true }));
   await expect(page.locator('.compound-library-row')).toContainText('Portable row comparison');
   await workspace(page, 'Machine resistance');
   await expect(page.getByLabel('Machine A name', { exact: true })).toHaveValue('Portable theoretical lever');

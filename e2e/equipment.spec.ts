@@ -44,9 +44,9 @@ test('shrug uses centimetres and force, and a blocking body obstacle suppresses 
   await page.getByLabel('Exercise A', { exact: true }).selectOption('shrug-dumbbell');
   const panel = page.getByRole('article', { name: 'Configuration A', exact: true });
   await expect(panel.locator('.moment')).toHaveText('+196.2 N');
-  await expect(input(page, 'A · Shoulder-girdle elevation')).toBeVisible();
-  await expect(input(page, 'A · Shoulder-girdle elevation').locator('..')).toContainText('cm');
-  await fillField(page, 'A · Shoulder-girdle elevation', '5');
+  await expect(input(page, 'Shoulder-girdle elevation')).toBeVisible();
+  await expect(input(page, 'Shoulder-girdle elevation').locator('..')).toContainText('cm');
+  await fillField(page, 'Shoulder-girdle elevation', '5');
   await openEquipment(page);
   await setSetupCheck(page, 'A', 'Check represented body capsules', true);
   await clickSetupButton(page, 'A', 'Add seat / frame box');

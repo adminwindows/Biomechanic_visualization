@@ -68,6 +68,13 @@ test('chooses two compatible exercises without a setup or save step', async ({ p
   await page.getByRole('searchbox', { name: 'Find exercise B', exact: true }).fill('dumbbell lateral raise');
   await page.getByRole('button', { name: 'Leaning dumbbell lateral raise', exact: true }).click();
   await expect(b).toHaveValue('raise-dumbbell');
+  const table = page.getByRole('region', { name: 'Resistance comparison', exact: true }).getByRole('table');
+  const torque = table.getByRole('row', { name: /External torque/ }).getByRole('cell');
+  await expect(torque).toHaveCount(2);
+  await expect(torque.first()).toContainText('N·m');
+  await expect(torque.last()).toContainText('N·m');
+  await expect(table.getByRole('row', { name: /Average resistance/ })).toBeVisible();
+  await expect(table.getByRole('row', { name: /Applied load/ })).toBeVisible();
   await expect(b.locator('option[value="curl-low"]')).toHaveCount(0);
   await expect(page.locator('.curve-svg')).toHaveCount(1);
   await expect(page.locator('.setup-a .moment')).toContainText('N·m');

@@ -1,4 +1,4 @@
-import { chooseCatalogPreset } from './studio-helpers';
+import { chooseCatalogPreset, revealControl } from './studio-helpers';
 import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
@@ -229,6 +229,7 @@ test('gates incompatible curves and compares only matching complete selected reg
 
 test('honors reduced motion and preserves manual positioning',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await page.reload();
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await expect(page.getByRole('checkbox',{name:'Reduced motion · manual movement',exact:true})).toBeChecked();
   await expect(page.getByRole('button',{name:'Play animation',exact:true})).toBeDisabled();
   await fillField(page, 'Upper-arm elevation from torso', '170');
