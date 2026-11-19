@@ -5,7 +5,7 @@
   "setups": [
     {
       "preset": "classic",
-      "name": "Horizontal pullover · outlet 225 cm",
+      "name": "Bent-over cable pullover (225 cm pulley height)",
       "kind": "standing",
       "facing": -1,
       "tilt": 90,
@@ -34,7 +34,7 @@
     },
     {
       "preset": "classic",
-      "name": "Horizontal pullover · outlet 185 cm",
+      "name": "Bent-over cable pullover (185 cm pulley height)",
       "kind": "standing",
       "facing": -1,
       "tilt": 90,
