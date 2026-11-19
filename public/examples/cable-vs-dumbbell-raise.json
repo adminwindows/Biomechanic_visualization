@@ -5,7 +5,7 @@
   "setups": [
     {
       "preset": "raise-cable",
-      "name": "Upright lateral raise · 49.05 N cable",
+      "name": "Standing cable lateral raise (49.05 N)",
       "kind": "standing",
       "facing": 1,
       "tilt": 0,
@@ -34,7 +34,7 @@
     },
     {
       "preset": "raise-dumbbell",
-      "name": "Upright lateral raise · 5 kg dumbbell",
+      "name": "Standing dumbbell lateral raise (5 kg)",
       "kind": "standing",
       "facing": 1,
       "tilt": 0,

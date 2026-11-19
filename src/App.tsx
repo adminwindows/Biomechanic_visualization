@@ -50,7 +50,9 @@ import { StudioDialog, CommandPalette } from "./StudioDialogs";
 import { Icon } from "./Icon";
 import { reuseModelReferences } from "./stateIdentity";
 import { createComparisonLifecycle } from "./comparisonLifecycle";
-import { outletHeight, withOutletHeight } from "./equipmentGeometry";
+import { ComparisonResults } from "./ComparisonResults";
+import { ExercisePairPicker } from "./ExercisePairPicker";
+import { createJointPairChooser } from "./exercisePairs";
 const StudyAssistant = lazy(() => import("./StudyAssistant").then(module => ({ default: module.StudyAssistant })));
 const CalibrationGuide = lazy(() => import("./CalibrationGuide").then(module => ({ default: module.CalibrationGuide })));
 
@@ -59,12 +61,12 @@ const deploymentBase = (import.meta as ImportMeta & { env: { BASE_URL: string } 
 type Side = 0 | 1;
 type Workspace = "compare" | "compound" | "machines" | "design" | "assistant" | "calibration";
 const workspaceInfo: Record<Workspace, { title: string; label: string; description: string; icon: "compare" | "movement" | "machine" | "search" | "study" | "measure" }> = {
-  compare: { title: "Compare the mechanics.", label: "Joint & exercise comparison", description: "One question. Two setups. See what changes.", icon: "compare" },
-  compound: { title: "Movement studies", label: "Compound movements", description: "Follow the path, the load and the declared supports.", icon: "movement" },
-  machines: { title: "Machine profiles", label: "Machines & measured profiles", description: "Build a mechanism or bring your own resistance data.", icon: "machine" },
-  design: { title: "Explore the possibilities", label: "Find a setup & research", description: "Search placements. Inspect uncertainty. Keep the evidence.", icon: "search" },
-  assistant: { title: "Start with a question", label: "Study planner", description: "Build a controlled experiment and review every assumption.", icon: "study" },
-  calibration: { title: "Measure before you infer", label: "Measure & calibrate", description: "Turn readings into traceable inputs and check the model.", icon: "measure" },
+  compare: { title: "Compare exercises", label: "Compare exercises", description: "Joint movement and resistance", icon: "compare" },
+  compound: { title: "Compare exercises", label: "Compound exercises", description: "Resistance over a multi-joint movement", icon: "movement" },
+  machines: { title: "Machine resistance", label: "Machine resistance", description: "Compare mechanisms and measured curves", icon: "machine" },
+  design: { title: "Explore setup changes", label: "Explore setup changes", description: "Placement, sensitivity and research notes", icon: "search" },
+  assistant: { title: "Try a setup change", label: "Try a setup change", description: "Change one setting and compare the result", icon: "study" },
+  calibration: { title: "Measurements", label: "Measurements", description: "Measure body dimensions, equipment and force", icon: "measure" },
 };
 const workspaceFromHash = (): Workspace => {
   const name = window.location.hash.slice(1);
@@ -124,7 +126,7 @@ export default function App() {
   const [notice, setNotice] = useState(initial.error ?? "");
   const [workspace, setWorkspace] = useState<Workspace>(workspaceFromHash);
   const [visited, setVisited] = useState<Workspace[]>(() => [...new Set<Workspace>(["compare", workspaceFromHash()])]);
-  const [dialog, setDialog] = useState<"catalog" | "examples" | "library" | "help" | "command" | null>(null);
+  const [dialog, setDialog] = useState<"tools" | "catalog" | "examples" | "library" | "help" | "command" | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorSide, setInspectorSide] = useState<Side>(0);
   const [showAnalysis, setShowAnalysis] = useState(false);
@@ -156,7 +158,7 @@ export default function App() {
     return () => { window.removeEventListener('keydown', keyboard); window.removeEventListener('popstate', location); window.removeEventListener('hashchange', location); };
   }, []);
   const [workbenchRevision, setWorkbenchRevision] = useState({ compound: 0, machine: 0 });
-  const [compoundSelection, setCompoundSelection] = useState<{preset: string; side: Side; nonce: number}>();
+  const [compoundSelection, setCompoundSelection] = useState<{preset: string; side: Side; nonce: number; pair?: boolean}>();
   function activate(next: Workspace) {
     setPlaying(false);
     setWorkspace(next);
@@ -420,6 +422,20 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "Could not preserve your exercise settings. Export the comparison before switching.");
     }
   }
+  const [applyJointPair] = useState(createJointPairChooser);
+  function choosePairPreset(side: Side, id: string) {
+    if (id.startsWith("compound:")) {
+      setCompoundSelection({ preset: id.slice("compound:".length), side, nonce: Date.now(), pair: true });
+      activate("compound");
+      return;
+    }
+    activate("compare");
+    update(draft => {
+      const choice = applyJointPair(draft, side, id);
+      setNotice(choice.notice);
+      return choice.state;
+    });
+  }
   function bodyChange(side: Side, key: keyof Profile, value: number) {
     update((draft) => {
       const next =
@@ -477,56 +493,29 @@ export default function App() {
     setState(future[0]);
     setFuture((f) => f.slice(1));
   }
-  const difference =
-    comparable && results[0].moment !== null && results[1].moment !== null
-      ? results[1].moment - results[0].moment
-      : null;
-
   return (
-    <div className="app-shell">
-      <a className="skip-link" href="#studio-content">Skip to workspace</a>
-      <aside className="studio-rail" aria-label="Application navigation">
-        <a className="studio-brand" href="#compare" onClick={event => { event.preventDefault(); activate("compare"); }} aria-label="Biomechanics Lab home"><img src={`${deploymentBase}brand-mark.svg`} alt=""/><span>BIOMECHANICS<small>LAB / EXERCISE MECHANICS</small></span></a>
-        <button className="rail-search" aria-label="Find a tool or exercise" onClick={() => setDialog("command")}><Icon name="search"/><span>Find anything</span><kbd>⌘ K</kbd></button>
-        <span className="rail-label">WORKSPACES</span>
-        <nav className="studio-navigation" aria-label="Analysis workspaces">{(Object.keys(workspaceInfo) as Workspace[]).map(id => <button key={id} aria-label={workspaceInfo[id].label} aria-current={workspace === id ? "page" : undefined} aria-pressed={workspace === id} onClick={() => activate(id)}><Icon name={workspaceInfo[id].icon}/><span>{({ compare: "Compare", compound: "Movements", machines: "Machines", design: "Explore & research", assistant: "Study planner", calibration: "Measure & calibrate" })[id]}</span>{workspace === id && <i/>}</button>)}</nav>
-        <div className="rail-secondary"><span className="rail-label">YOUR TOOLKIT</span><button onClick={() => setDialog("examples")}><Icon name="study"/>Study starters</button><button onClick={() => setDialog("catalog")}><Icon name="movement"/>Exercise catalog</button><button onClick={() => setDialog("library")}><Icon name="library"/>Library & backup</button><button onClick={() => setDialog("help")}><Icon name="help"/>Model & data guide</button></div>
-        <div className="rail-note"><span className="local-indicator"/>Private by design<small>Work stays in this browser.<br/>Export a backup to keep it.</small></div>
-      </aside>
-      <main id="workspace" className={`studio-main ${inspectorOpen ? "inspector-open" : ""}`}>
-        <header className="studio-topbar"><span className="studio-breadcrumb">WORKSPACE <span>/</span> {workspaceInfo[workspace].label}</span><div className="topbar-actions"><button className="mobile-search" aria-label="Find a tool or exercise" onClick={() => setDialog("command")}><Icon name="search"/></button><button aria-label="New study" title="New study" onClick={() => setDialog("examples")}><Icon name="study"/><span>New study</span></button><button aria-label="Export" title="Export comparison" onClick={exportFile}><Icon name="download"/><span>Export</span></button><button aria-label="Import comparison" onClick={() => fileInput.current?.click()}><Icon name="upload"/><span>Import</span></button></div><input ref={fileInput} hidden aria-label="Import comparison file" type="file" accept=".json,application/json" onChange={event => void importFile(event.target.files?.[0])}/></header>
-        <div className="studio-heading" id="studio-content" tabIndex={-1}><div><span className="studio-kicker">EXERCISE MECHANICS STUDIO</span><h1>{workspaceInfo[workspace].title}</h1><p>{workspaceInfo[workspace].description}</p></div><OfflineStatus beforeReload={() => { if (!savingEnabled) throw new Error("Comparison saving is paused. Export this session or resolve the saved-data conflict before updating."); flushWorkspaceEdits(); if (!persistComparison()) throw new Error("The current comparison could not be saved without replacing other data. Export this session and reload or resolve the storage conflict before updating."); }}/></div>
-        <div className="shared-profile-bar"><span><i/>Body A <strong>{(profiles[0].height * 100).toFixed(0)} cm</strong><span className="profile-separator">/</span>Body B <strong>{(profiles[1].height * 100).toFixed(0)} cm</strong><span className="profile-link">{state.lockBody ? "Linked profiles" : "Independent profiles"}</span></span><button onClick={() => editSetup(0, true)}>Edit body profiles <span aria-hidden="true">↗</span></button></div>
+    <div className="app-shell comparator-shell">
+      <a className="skip-link" href="#studio-content">Skip to comparison</a>
+      <main id="workspace" className={`studio-main compare-main ${inspectorOpen ? "inspector-open" : ""}`}>
+        <header className="compare-topbar">
+          <a className="compare-brand" href="#compare" onClick={event => { event.preventDefault(); activate("compare"); }}>
+            <img src={`${deploymentBase}brand-mark.svg`} alt="" />Biomechanics Lab
+          </a>
+          <div className="compare-topbar-actions">
+            <OfflineStatus beforeReload={() => { if (!savingEnabled) throw new Error("Comparison saving is paused. Export this session or resolve the saved-data conflict before updating."); flushWorkspaceEdits(); if (!persistComparison()) throw new Error("The current comparison could not be saved without replacing other data. Export this session and reload or resolve the storage conflict before updating."); }}/>
+            <button className="tools-trigger" aria-haspopup="dialog" onClick={() => setDialog("tools")}><Icon name="settings"/>Tools</button>
+          </div>
+          <input ref={fileInput} hidden aria-label="Import comparison file" type="file" accept=".json,application/json" onChange={event => void importFile(event.target.files?.[0])}/>
+        </header>
+        <div className="compare-content">
+        <header className="compare-header" id="studio-content" tabIndex={-1}>
+          <h1>{workspaceInfo[workspace].title}</h1>
+          {workspace !== "compare" && workspace !== "compound" && <button onClick={() => activate("compare")}>Back to comparison</button>}
+        </header>
         {notice && <div className="notice" role="status">{notice}<button aria-label="Dismiss message" onClick={() => setNotice("")}>×</button></div>}
         <section hidden={workspace !== "compare"} aria-label="Joint and exercise comparison workspace">
-        <div className="study-bar">
-          <div className="study-name">
-            <span className="study-icon">
-              <ArrowIcon />
-            </span>
-            <div>
-              <span className="overline">CURRENT STUDY</span>
-              <input
-                aria-label="Comparison name"
-                placeholder="Untitled comparison"
-                value={state.name}
-                maxLength={100}
-                onChange={(e) =>
-                  update((d) => {
-                    d.name = e.target.value;
-                  })
-                }
-              />
-            </div>
-          </div>
-          <div className="study-actions">
-            <span className="save-label">
-              {!savingEnabled
-                ? "Autosave paused"
-                : saved
-                  ? "Saved on this browser"
-                  : "Saving…"}
-            </span>
+        <ExercisePairPicker jointSetups={state.setups} onPick={choosePairPreset}/>
+        <div className="pair-actions">
             <button
               className="icon-button"
               aria-label="Undo"
@@ -565,9 +554,8 @@ export default function App() {
             >
               Swap A ⇄ B
             </button>
-          </div>
         </div>
-        <p className="comparison-context"><strong>{state.comparisonMode === "controlled" ? "Controlled comparison" : "Practical comparison"}</strong> · {state.criterion || "Define the question and which variables you are changing in the analysis below."}</p>
+        <ComparisonResults state={state} results={results} />
         {!savingEnabled && (
           <div className="notice recovery-notice" role="status">
             {savingPauseReason}
@@ -605,259 +593,8 @@ export default function App() {
             and no moment difference is calculated.
           </div>
         )}
-        <div className="view-toolbar">
-          <div className="segmented" aria-label="Drawing view">
-            <button
-              aria-pressed={view === "side"}
-              onClick={() => setView("side")}
-            >
-              Side view
-            </button>
-            <button
-              aria-pressed={view === "top"}
-              onClick={() => setView("top")}
-            >
-              Top view
-            </button>
-            <button
-              aria-pressed={view === "front"}
-              onClick={() => setView("front")}
-            >
-              Front view
-            </button>
-          </div>
-          <div className="view-options">
-            <div className="toolbar-zoom">
-              <button
-                aria-label="Zoom out"
-                onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}
-              >
-                −
-              </button>
-              <span>{Math.round(zoom * 100)}%</span>
-              <button
-                aria-label="Zoom in"
-                onClick={() => setZoom((z) => Math.min(3, z + 0.2))}
-              >
-                +
-              </button>
-              <button
-                onClick={() => {
-                  setZoom(1);
-                  setPan([0, 0]);
-                }}
-              >
-                Fit
-              </button>
-            </div>
-            <label>
-              <input
-                type="checkbox"
-                checked={annotations}
-                onChange={(e) => setAnnotations(e.target.checked)}
-              />{" "}
-              Labels
-            </label>
-            <span>
-              <i className="scale-icon" /> Shared scale
-            </span>
-          </div>
-        </div>
-        <section
-          className="comparison-grid"
-          aria-label="A and B configurations"
-        >
-          {state.setups.map((setup, index) => {
-            const side = index as Side;
-            const letter = side === 0 ? "A" : "B";
-            const result = results[side];
-            return (
-              <article
-                className={`setup-card setup-${letter.toLowerCase()}`}
-                key={letter}
-                aria-label={`Configuration ${letter}`}
-              >
-                <div className="card-heading">
-                  <span className="letter-badge">{letter}</span>
-                  <div>
-                    <span className="overline">CONFIGURATION {letter}</span>
-                    <select
-                      aria-label={`Configuration ${letter} preset`}
-                      value={setup.preset}
-                      onChange={(e) => choosePreset(side, e.target.value)}
-                    >
-                      {presets.map((p) => (
-                        <option key={p.preset} value={p.preset}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <span className="cable-count">
-                    {setup.resistance === "dumbbell"
-                      ? "Gravity"
-                      : setup.resistance === "unknown" ||
-                          setup.model === "machine"
-                        ? "Geometry only"
-                        : setup.cables === 1
-                          ? "1 cable"
-                          : "2 cables"}
-                  </span>
-                </div>
-                <button className="edit-setup-button" onClick={() => editSetup(side)} aria-label={`Edit setup ${letter}`}><Icon name="settings"/>Edit setup</button>
-                <Scene
-                  setup={setup}
-                  profile={profiles[side]}
-                  angle={state.angles[side]}
-                  setups={state.setups}
-                  profiles={profiles}
-                  view={view}
-                  label={letter}
-                  annotations={annotations}
-                  zoom={zoom}
-                  pan={pan}
-                  onPanChange={setPan}
-                  onSetupChange={(patch) => setupPatch(side, patch)}
-                  onAngleChange={(angle) =>
-                    update((d) => setMotionAngle(d, side, angle))
-                  }
-                />
-                <div className="metric-strip">
-                  <div>
-                    <span className="overline">EXTERNAL CONTRIBUTION</span>
-                    <p className="moment">
-                      {result.moment === null
-                        ? "—"
-                        : `${result.moment > 0 ? "+" : ""}${result.moment.toFixed(1)}`}{" "}
-                      <small>{modelDefinitions[side].unit}</small>
-                    </p>
-                  </div>
-                  <div className={`status status-${result.status}`}>
-                    <span>
-                      {result.status === "resists" ||
-                      result.status === "assists" ? (
-                        <ArrowIcon down={result.status === "assists"} />
-                      ) : result.status === "contact" ? (
-                        "!"
-                      ) : (
-                        "○"
-                      )}
-                    </span>
-                    {(result.status === "resists" ||
-                      result.status === "assists") &&
-                    (setup.model ?? "pullover") !== "pullover"
-                      ? `${result.status === "resists" ? "Resists" : "Assists"} movement`
-                      : (result.status === "contact" && !result.contactKind?.includes("backrest") ? "Geometry contact" : labels[result.status] ?? result.status)}
-                  </div>
-                </div>
-                <div className="force-components">
-                  <span>
-                    Cable:{" "}
-                    {result.cableMoment == null
-                      ? "—"
-                      : result.cableMoment.toFixed(1) + " " + modelDefinitions[side].unit}
-                  </span>
-                  <span>
-                    Gravity:{" "}
-                    {result.gravityMoment == null
-                      ? "—"
-                      : result.gravityMoment.toFixed(1) + " " + modelDefinitions[side].unit}
-                  </span>
-                </div>
-                <p className="panel-footnote">
-                  <strong>
-                    {setup.resistance === "dumbbell"
-                      ? `${setup.loadMass ?? 5} kg free weight`
-                      : forceValue(setup) === null
-                        ? "Unknown force"
-                        : `${setup.cables} × ${forceValue(setup)!.toFixed(1)} N`}
-                  </strong>{" "}
-                  ·{" "}
-                  {result.status === "contact"
-                    ? (result.validityReason ?? `${result.contactKind ?? "Represented contact"}. Direct mechanics are unavailable here.`)
-                    : (result.validityReason ??
-                      (setup.kind === "bench"
-                        ? "No contact detected with the represented backrest."
-                        : "Clearance checks use only the enabled body proxies and obstacles. Balance is not evaluated."))}
-                </p>
-              </article>
-            );
-          })}
-        </section>
         <section className="movement-panel" aria-label="Movement controls">
-          <div className="movement-title">
-            <span className="overline">MOVE THROUGH THE REP</span>
-            <label className="sync-label">
-              Compare at{" "}
-              <select
-                aria-label="Synchronization mode"
-                value={state.sync}
-                onChange={(e) =>
-                  update((d) => {
-                    d.sync = e.target.value as LabState["sync"];
-                    return setAngle(d, 0, d.angles[0]);
-                  })
-                }
-              >
-                <option value="angle" disabled={!shared || !comparable}>
-                  the same angle
-                </option>
-                <option value="progress">the same progress</option>
-                <option value="independent">independent positions</option>
-              </select>
-            </label>
-          </div>
-          <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
-            <label className="select-field">
-              Movement mode
-              <select aria-label="Movement mode" value={state.motionMode ?? "explore"}
-                onChange={(event) => update(d => {
-                  d.motionMode = event.target.value as "explore" | "usable";
-                  d.clearIntervalAnchors = [...d.angles];
-                })}>
-                <option value="explore">Explore full range</option>
-                <option value="usable">Usable range according to the model</option>
-              </select>
-            </label>
-            <p className="small-note" style={{ margin: 0 }}>
-              {usableMode
-                ? "Motion stays within one connected portion without represented backrest contact or invalid geometry. This is not personal range of motion or a clearance assessment of the whole machine. Your original ranges are preserved."
-                : "Explore the full selected ranges. Contact poses are ghosted and their direct mechanical results are unavailable."}
-            </p>
-            {usableMode && motion && (state.sync === "independent" ? [0, 1] : [0]).map(index => {
-              const side = index as Side;
-              const options = motion.options[side];
-              const selected = motion.selected[side];
-              const selectedIndex = selected ? options.findIndex(interval => interval[0] === selected[0] && interval[1] === selected[1]) : -1;
-              return <label className="select-field" key={side} style={{ display: "grid", justifyContent: "stretch" }}>
-                {state.sync === "independent" ? `${side === 0 ? "A" : "B"} clear portion` : "Shared clear portion"}
-                <select aria-label={state.sync === "independent" ? `${side === 0 ? "A" : "B"} clear portion` : "Shared clear portion"}
-                  disabled={!options.length} value={selectedIndex} style={{ maxWidth: "100%", width: "100%" }}
-                  onChange={event => update(d => {
-                    const choice = Number(event.target.value);
-                    const anchors: [number, number] = [...d.angles];
-                    for (const target of (d.sync === "independent" ? [side] : [0, 1])) {
-                      const interval = motion.options[target][choice];
-                      anchors[target] = (interval[0] + interval[1]) / 2;
-                    }
-                    d.clearIntervalAnchors = anchors;
-                  })}>
-                  {!options.length && <option value={-1}>No shared clear portion</option>}
-                  {options.map((interval, option) => <option key={option} value={option}>
-                    {interval[0].toFixed(2)}–{interval[1].toFixed(2)}{modelDefinitions[side].angleUnit ?? "°"}
-                    {state.sync === "progress" ? ` in A; ${motion.options[1][option][0].toFixed(2)}–${motion.options[1][option][1].toFixed(2)}${modelDefinitions[1].angleUnit ?? "°"} in B` : ""}
-                  </option>)}
-                </select>
-                {!options.length && <span role="status" className="small-note">
-                  {(state.sync === "independent" ? !motion.known[side] : motion.known.some(known => !known))
-                    ? "Cable routing or machine motion is not modeled for this configuration. Use exploration mode; no model clearance claim is available."
-                    : state.sync === "independent"
-                      ? "No clear portion was found in this setup's selected range. Change the setup or range, or return to exploration."
-                      : "No clear portion satisfies both setups at this synchronization. Choose independent positions, change the setup or return to exploration."}
-                </span>}
-              </label>;
-            })}
-          </div>
+          <h2 className="rep-title">Position in the rep</h2>
           <div className="movement-row">
             <button
               className={`play-button ${playing ? "is-playing" : ""}`}
@@ -933,17 +670,77 @@ export default function App() {
               <span className="b-text">B {state.angles[1].toFixed(1)}{modelDefinitions[1].angleUnit ?? "°"}</span>
             </div>
           </div>
-          <div className="movement-caption">
-            <span>
-              {modelDefinitions[0].angleLabel} · {modelDefinitions[0].action}
-            </span>
-            <span>
-              {state.sync === "progress"
-                ? "Equal progress does not mean equal joint angles."
-                : `Reference action: ${modelDefinitions[0].action}.`}
-            </span>
+          <details className="movement-settings"><summary>Movement settings</summary>
+            <label className="sync-label">
+              Compare at{" "}
+              <select
+                aria-label="Synchronization mode"
+                value={state.sync}
+                onChange={(e) =>
+                  update((d) => {
+                    d.sync = e.target.value as LabState["sync"];
+                    return setAngle(d, 0, d.angles[0]);
+                  })
+                }
+              >
+                <option value="angle" disabled={!shared || !comparable}>
+                  the same angle
+                </option>
+                <option value="progress">the same progress</option>
+                <option value="independent">independent positions</option>
+              </select>
+            </label>
+          <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
+            <label className="select-field">
+              Movement mode
+              <select aria-label="Movement mode" value={state.motionMode ?? "explore"}
+                onChange={(event) => update(d => {
+                  d.motionMode = event.target.value as "explore" | "usable";
+                  d.clearIntervalAnchors = [...d.angles];
+                })}>
+                <option value="explore">Explore full range</option>
+                <option value="usable">Usable range according to the model</option>
+              </select>
+            </label>
+            <p className="small-note" style={{ margin: 0 }}>
+              {usableMode
+                ? "Motion stays within one connected portion without represented backrest contact or invalid geometry. This is not personal range of motion or a clearance assessment of the whole machine. Your original ranges are preserved."
+                : "Explore the full selected ranges. Contact poses are ghosted and their direct mechanical results are unavailable."}
+            </p>
+            {usableMode && motion && (state.sync === "independent" ? [0, 1] : [0]).map(index => {
+              const side = index as Side;
+              const options = motion.options[side];
+              const selected = motion.selected[side];
+              const selectedIndex = selected ? options.findIndex(interval => interval[0] === selected[0] && interval[1] === selected[1]) : -1;
+              return <label className="select-field" key={side} style={{ display: "grid", justifyContent: "stretch" }}>
+                {state.sync === "independent" ? `${side === 0 ? "A" : "B"} clear portion` : "Shared clear portion"}
+                <select aria-label={state.sync === "independent" ? `${side === 0 ? "A" : "B"} clear portion` : "Shared clear portion"}
+                  disabled={!options.length} value={selectedIndex} style={{ maxWidth: "100%", width: "100%" }}
+                  onChange={event => update(d => {
+                    const choice = Number(event.target.value);
+                    const anchors: [number, number] = [...d.angles];
+                    for (const target of (d.sync === "independent" ? [side] : [0, 1])) {
+                      const interval = motion.options[target][choice];
+                      anchors[target] = (interval[0] + interval[1]) / 2;
+                    }
+                    d.clearIntervalAnchors = anchors;
+                  })}>
+                  {!options.length && <option value={-1}>No shared clear portion</option>}
+                  {options.map((interval, option) => <option key={option} value={option}>
+                    {interval[0].toFixed(2)}–{interval[1].toFixed(2)}{modelDefinitions[side].angleUnit ?? "°"}
+                    {state.sync === "progress" ? ` in A; ${motion.options[1][option][0].toFixed(2)}–${motion.options[1][option][1].toFixed(2)}${modelDefinitions[1].angleUnit ?? "°"} in B` : ""}
+                  </option>)}
+                </select>
+                {!options.length && <span role="status" className="small-note">
+                  {(state.sync === "independent" ? !motion.known[side] : motion.known.some(known => !known))
+                    ? "Cable routing or machine motion is not modeled for this configuration. Use exploration mode; no model clearance claim is available."
+                    : state.sync === "independent"
+                      ? "No clear portion was found in this setup's selected range. Change the setup or range, or return to exploration."
+                      : "No clear portion satisfies both setups at this synchronization. Choose independent positions, change the setup or return to exploration."}
+                </span>}
+              </label>;
+            })}
           </div>
-        </section>
         <div className="motion-options">
           <label>
             Playback speed{" "}
@@ -974,11 +771,182 @@ export default function App() {
             space to pan both views.
           </span>
         </div>
+          </details>
+        </section>
+        <div className="view-toolbar">
+          <div className="segmented" aria-label="Drawing view">
+            <button
+              aria-pressed={view === "side"}
+              onClick={() => setView("side")}
+            >
+              Side view
+            </button>
+            <button
+              aria-pressed={view === "top"}
+              onClick={() => setView("top")}
+            >
+              Top view
+            </button>
+            <button
+              aria-pressed={view === "front"}
+              onClick={() => setView("front")}
+            >
+              Front view
+            </button>
+          </div>
+          <div className="view-options">
+            <div className="toolbar-zoom">
+              <button
+                aria-label="Zoom out"
+                onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}
+              >
+                −
+              </button>
+              <span>{Math.round(zoom * 100)}%</span>
+              <button
+                aria-label="Zoom in"
+                onClick={() => setZoom((z) => Math.min(3, z + 0.2))}
+              >
+                +
+              </button>
+              <button
+                onClick={() => {
+                  setZoom(1);
+                  setPan([0, 0]);
+                }}
+              >
+                Fit
+              </button>
+            </div>
+            <label>
+              <input
+                type="checkbox"
+                checked={annotations}
+                onChange={(e) => setAnnotations(e.target.checked)}
+              />{" "}
+              Labels
+            </label>
+            <span>
+              <i className="scale-icon" /> Shared scale
+            </span>
+          </div>
+        </div>
+        <section
+          className="comparison-grid"
+          aria-label="A and B configurations"
+        >
+          {state.setups.map((setup, index) => {
+            const side = index as Side;
+            const letter = side === 0 ? "A" : "B";
+            const result = results[side];
+            return (
+              <article
+                className={`setup-card setup-${letter.toLowerCase()}`}
+                key={letter}
+                aria-label={`Configuration ${letter}`}
+              >
+                <div className="card-heading">
+                  <span className="letter-badge">{letter}</span>
+                  <div>
+                    <h3 className="setup-name">{setup.name}</h3>
+                  </div>
+                  <span className="cable-count">
+                    {setup.resistance === "dumbbell"
+                      ? "Gravity"
+                      : setup.resistance === "unknown" ||
+                          setup.model === "machine"
+                        ? "Geometry only"
+                        : setup.cables === 1
+                          ? "1 cable"
+                          : "2 cables"}
+                  </span>
+                  <button className="edit-setup-button" onClick={() => editSetup(side)} aria-label={`Edit setup ${letter}`}><Icon name="settings"/>Edit setup</button>
+                </div>
+                <Scene
+                  setup={setup}
+                  profile={profiles[side]}
+                  angle={state.angles[side]}
+                  setups={state.setups}
+                  profiles={profiles}
+                  view={view}
+                  label={letter}
+                  annotations={annotations}
+                  zoom={zoom}
+                  pan={pan}
+                  onPanChange={setPan}
+                  onSetupChange={(patch) => setupPatch(side, patch)}
+                  onAngleChange={(angle) =>
+                    update((d) => setMotionAngle(d, side, angle))
+                  }
+                />
+                <div className="metric-strip">
+                  <div>
+                    <span className="overline">{modelDefinitions[side].unit === "N" ? "External force" : "External moment"}</span>
+                    <p className="moment">
+                      {result.moment === null
+                        ? "—"
+                        : `${result.moment > 0 ? "+" : ""}${result.moment.toFixed(1)}`}{" "}
+                      <small>{modelDefinitions[side].unit}</small>
+                    </p>
+                  </div>
+                  <div className={`status status-${result.status}`}>
+                    <span>
+                      {result.status === "resists" ||
+                      result.status === "assists" ? (
+                        <ArrowIcon down={result.status === "assists"} />
+                      ) : result.status === "contact" ? (
+                        "!"
+                      ) : (
+                        "○"
+                      )}
+                    </span>
+                    {(result.status === "resists" ||
+                      result.status === "assists") &&
+                    (setup.model ?? "pullover") !== "pullover"
+                      ? `${result.status === "resists" ? "Resists" : "Assists"} movement`
+                      : (result.status === "contact" && !result.contactKind?.includes("backrest") ? "Geometry contact" : labels[result.status] ?? result.status)}
+                  </div>
+                </div>
+                <details className="load-details"><summary>Load and clearance</summary>
+                <div className="force-components">
+                  <span>
+                    Cable:{" "}
+                    {result.cableMoment == null
+                      ? "—"
+                      : result.cableMoment.toFixed(1) + " " + modelDefinitions[side].unit}
+                  </span>
+                  <span>
+                    Gravity:{" "}
+                    {result.gravityMoment == null
+                      ? "—"
+                      : result.gravityMoment.toFixed(1) + " " + modelDefinitions[side].unit}
+                  </span>
+                </div>
+                <p className="panel-footnote">
+                  <strong>
+                    {setup.resistance === "dumbbell"
+                      ? `${setup.loadMass ?? 5} kg free weight`
+                      : forceValue(setup) === null
+                        ? "Unknown force"
+                        : `${setup.cables} × ${forceValue(setup)!.toFixed(1)} N`}
+                  </strong>{" "}
+                  ·{" "}
+                  {result.status === "contact"
+                    ? (result.validityReason ?? `${result.contactKind ?? "Represented contact"}. Direct mechanics are unavailable here.`)
+                    : (result.validityReason ??
+                      (setup.kind === "bench"
+                        ? "No contact detected with the represented backrest."
+                        : "Clearance checks use only the enabled body proxies and obstacles. Balance is not evaluated."))}
+                </p>
+                </details>
+              </article>
+            );
+          })}
+        </section>
         <section className="analysis-grid" aria-label="Results">
           <article className="curve-card">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">THE RESISTANCE PROFILE</p>
                 <h2>Resistance across the movement</h2>
               </div>
               <div className="legend">
@@ -999,76 +967,24 @@ export default function App() {
               }
             />
             <p className="chart-caption">
-              Above zero resists the named reference action; below zero assists
-              it. Gaps indicate contact or unavailable mechanics.
+              Positive values resist the indicated movement. Negative values assist it. Gaps mark positions where the model cannot give a value.
             </p>
           </article>
-          <aside className="insight-card">
-            <span className="insight-symbol">
-              <ArrowIcon />
-            </span>
-            <p className="eyebrow">READING THIS COMPARISON</p>
-            <h2>
-              {!comparable
-                ? "Different questions, different coordinates."
-                : difference === null
-                  ? "A model limit changes the story."
-                  : Math.abs(difference) < 0.1
-                    ? "The external moments match."
-                    : `${Math.abs(difference).toFixed(1)} ${modelDefinitions[0].unit} ${difference > 0 ? "higher" : "lower"} in B.`}
-            </h2>
-            <p>
-              {!comparable
-                ? "These movements act about different joint coordinates. Read each curve individually; a larger number here is not a ranking of the exercises."
-                : difference === null
-                  ? "At least one setup has unknown resistance, contact or an invalid position. Check its status before comparing numerical results."
-                  : `At A ${state.angles[0].toFixed(1)}${modelDefinitions[0].angleUnit ?? "°"} and B ${state.angles[1].toFixed(1)}${modelDefinitions[1].angleUnit ?? "°"}, the difference is in the external contribution about the modeled coordinate.`}
-            </p>
-            <div className="insight-divider" />
-            <p className="insight-note">
-              Try copying A into B, then changing only pulley height. Keep force
-              and body dimensions locked to isolate that change.
-            </p>
-            <button
-              disabled={
-                (state.setups[0].resistance ?? "cable") !== "cable" ||
-                forceValue(state.setups[0]) === null ||
-                state.setups[0].model === "machine"
-              }
-              onClick={() =>
-                update((d) => {
-                  d.setups[1] = clone(d.setups[0]);
-                  const height = outletHeight(d.setups[0]);
-                  const lowest = Math.min(...(d.setups[0].outletPositions?.map(point => point[2]) ?? [height]));
-                  d.setups[1] = withOutletHeight(d.setups[0], height + (lowest >= .45 ? -.4 : .4));
-                  d.comparisonMode = "controlled";
-                  d.criterion = "Only outlet height changes. Body dimensions, force per attachment and movement range are held fixed.";
-                  d.profiles[1] = clone(d.profiles[0]);
-                  d.angles[1] = d.angles[0];
-                  d.lockBody = true;
-                  d.lockForce = forceValue(d.setups[0]) !== null;
-                  d.lockEquipment = false;
-                  d.sync = "angle";
-                  d.name = "What changes with a lower pulley?";
-                })
-              }
-            >
-              Try a pulley-height comparison →
-            </button>
-          </aside>
+
         </section>
         <details className="analysis-workbench" open={showAnalysis} onToggle={event => setShowAnalysis(event.currentTarget.open)}><summary><span><Icon name="search"/>Detailed analysis & comparison notes</span><span>Regions · differences · sensitivity</span></summary>{showAnalysis && <AnalysisPanel state={state} onChange={update}/>}</details>
         </section>
-                {visited.includes("compound") && <section hidden={workspace !== "compound"} aria-label="Compound movement workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><CompoundLab key={workbenchRevision.compound} profiles={profiles} selection={compoundSelection} /></Suspense></section>}
+                {visited.includes("compound") && <section hidden={workspace !== "compound"} aria-label="Compound movement workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><CompoundLab key={workbenchRevision.compound} profiles={profiles} selection={compoundSelection} onPickJoint={id => choosePairPreset(0, id)} /></Suspense></section>}
         {visited.includes("machines") && <section hidden={workspace !== "machines"} aria-label="Machine workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><MachineLab key={workbenchRevision.machine} /></Suspense></section>}
         {visited.includes("design") && <section hidden={workspace !== "design"} aria-label="Setup search workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><DesignExplorer state={state} onResearchRestore={source => {
           setWorkbenchRevision(previous => ({ ...previous, [source]: previous[source] + 1 }));
           setCompoundSelection(undefined);
           activate(source === "machine" ? "machines" : "compound");
         }} onApply={next => { update(() => next); activate("compare"); }} /></Suspense></section>}
-        {visited.includes("assistant") && <section hidden={workspace !== "assistant"} aria-label="Study planner workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><StudyAssistant state={state} onApply={next => { update(() => next); activate("compare"); }}/></Suspense></section>}
+        {visited.includes("assistant") && <section hidden={workspace !== "assistant"} aria-label="Setup change workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><StudyAssistant state={state} onApply={next => { update(() => next); activate("compare"); }}/></Suspense></section>}
         {visited.includes("calibration") && <section hidden={workspace !== "calibration"} aria-label="Measurement and calibration workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><CalibrationGuide state={state} onApply={next => { update(() => next); activate("compare"); }} onOpenMachine={() => activate("machines")}/></Suspense></section>}
-        <footer className="studio-footer"><span>Calculations stay on this device.</span><button onClick={() => setDialog("help")}>Model & data guide</button><span>BIOMECHANICS / LAB</span></footer>
+        <footer className="studio-footer"><button onClick={() => setDialog("help")}>Model &amp; data guide</button></footer>
+        </div>
       </main>
       <aside className="setup-inspector" aria-label="Setup inspector" hidden={!inspectorOpen}><header className="inspector-heading"><div><span className="overline">PARAMETERS</span><h2>Setup inspector</h2></div><button ref={inspectorClose} aria-label="Close setup inspector" onClick={closeInspector}><Icon name="close"/></button></header><div className="inspector-side-tabs" aria-label="Inspector configuration"><button aria-pressed={inspectorSide === 0} onClick={() => setInspectorSide(0)}>Configuration A</button><button aria-pressed={inspectorSide === 1} onClick={() => setInspectorSide(1)}>Configuration B</button></div><div className="inspector-scroll">
         <section className="settings-section" aria-label="Detailed settings">
@@ -1528,8 +1444,25 @@ export default function App() {
           </div>
         </section>
       </div></aside>
+      <StudioDialog open={dialog === "tools"} title="Tools" onClose={() => setDialog(null)}>
+        <div className="tools-list">
+          <button onClick={() => setDialog("command")}><Icon name="search"/>Find a tool or exercise</button>
+          <button onClick={() => { setDialog(null); editSetup(0, true); }}><Icon name="measure"/>Edit body profiles</button>
+          <button onClick={() => setDialog("examples")}><Icon name="compare"/>Example comparisons</button>
+          <button onClick={() => setDialog("catalog")}><Icon name="movement"/>Exercise catalog</button>
+          {(Object.keys(workspaceInfo) as Workspace[]).map(id => <button key={id} aria-current={workspace === id ? "page" : undefined} onClick={() => { setDialog(null); activate(id); }}><Icon name={workspaceInfo[id].icon}/>{workspaceInfo[id].label}</button>)}
+          <button onClick={() => setDialog("library")}><Icon name="library"/>Library &amp; backup</button>
+          <button onClick={() => setDialog("help")}><Icon name="help"/>Model &amp; data guide</button>
+        </div>
+        <div className="tools-files">
+          <label>Comparison name<input value={state.name} maxLength={100} onChange={event => update(draft => { draft.name = event.target.value; })}/></label>
+          <span className="save-label">{!savingEnabled ? "Autosave paused" : saved ? "Saved on this browser" : "Saving…"}</span>
+          <button onClick={exportFile} aria-label="Export">Export joint comparison</button>
+          <button onClick={() => fileInput.current?.click()} aria-label="Import comparison">Import joint comparison</button>
+        </div>
+      </StudioDialog>
       <StudioDialog open={dialog === "catalog"} title="Exercise catalog" onClose={() => setDialog(null)}><ExerciseCatalog onPick={(side,id) => { choosePreset(side,id); setDialog(null); }}/></StudioDialog>
-      <StudioDialog open={dialog === "examples"} title="Start a study" onClose={() => setDialog(null)}><div className="study-starters-intro"><p>Start from a clear question. Every example includes its inputs, assumptions and comparison criterion.</p><button className="primary-action" onClick={() => { setDialog(null); activate("assistant"); }}><Icon name="study"/>Plan my own question</button></div><ExampleComparisons onLoad={next => { activate("compare"); setPlaying(false); update(() => ({ ...next, viewFraming: next.viewFraming ?? { view: getDefinition(next.setups[0]).plane, zoom: 1, pan: [0,0] } })); setDialog(null); }} onNotice={setNotice}/><button className="text-action" onClick={() => { update(() => createInitialState()); activate("compare"); setDialog(null); setNotice("Example comparison restored. Undo is available."); }}>Reset to the opening comparison</button></StudioDialog>
+      <StudioDialog open={dialog === "examples"} title="Example comparisons" onClose={() => setDialog(null)}><ExampleComparisons onLoad={next => { activate("compare"); setPlaying(false); update(() => ({ ...next, viewFraming: next.viewFraming ?? { view: getDefinition(next.setups[0]).plane, zoom: 1, pan: [0,0] } })); setDialog(null); }} onNotice={setNotice}/><button className="text-action" onClick={() => { update(() => createInitialState()); activate("compare"); setDialog(null); setNotice("Example comparison restored. Undo is available."); }}>Reset to the opening comparison</button></StudioDialog>
       <StudioDialog open={dialog === "library"} title="Library & backup" onClose={() => setDialog(null)}>
         <SavedWorkspace
           state={state}
@@ -1554,9 +1487,7 @@ export default function App() {
           <div>
             <p className="eyebrow">WHAT THIS MODEL TELLS YOU</p>
             <h2>
-              Geometry first.
-              <br />
-              Interpretation with care.
+              How the model works
             </h2>
           </div>
           <div>
@@ -1586,7 +1517,7 @@ export default function App() {
             <h3>Where the knowledge comes from</h3>
             <p>The handoff and physics references define the force, moment and work principles. Rigid segments, joint axes, movement paths and starting body proportions are explicit modeling choices, not an experimentally validated digital copy of a person. Your measurements and supplied machine data add observations with their own provenance. Numerical tests check the implemented equations; they do not establish anatomical realism.</p>
             <h3>Smart tools and data</h3>
-            <p>The Study planner uses local rules and the same mechanics engine. Manual AI exchange only prepares text for you to review and share yourself; no AI service is connected and nothing is uploaded automatically. Imported proposals are constrained, recalculated and reviewed before applying to B. Formula editing and calibration also run locally.</p>
+            <p>Try a setup change uses local rules and the same mechanics engine. Manual AI exchange only prepares text for you to review and share yourself; no AI service is connected and nothing is uploaded automatically. Imported proposals are constrained, recalculated and reviewed before applying to B. Formula editing and calibration also run locally.</p>
             <h3>Mechanical references</h3>
             <p>
               <a
@@ -1610,7 +1541,7 @@ export default function App() {
       </StudioDialog>
       <CommandPalette open={dialog === "command"} onClose={() => setDialog(null)} onExercise={choosePreset} commands={[
         ...(Object.keys(workspaceInfo) as Workspace[]).map(id => ({ id, label: workspaceInfo[id].label, detail: workspaceInfo[id].description, run: () => activate(id) })),
-        { id: 'examples', label: 'Start a prepared study', detail: 'Pulley height, lateral raises, body proportions', run: () => setDialog('examples') },
+        { id: 'examples', label: 'Example comparisons', detail: 'Pulley height, lateral raises, body proportions', run: () => setDialog('examples') },
         { id: 'library', label: 'Library & backup', detail: 'Saved work, full export and recovery', run: () => setDialog('library') },
         { id: 'catalog', label: 'Exercise catalog', detail: 'Filter every modeled exercise', run: () => setDialog('catalog') },
         { id: 'setup-a', label: 'Edit setup A', detail: 'Body, resistance and equipment geometry', run: () => editSetup(0) },

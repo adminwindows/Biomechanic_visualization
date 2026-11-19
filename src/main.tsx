@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import "./workspace-navigation.css";
 import "./studio.css";
+import "./comparator.css";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

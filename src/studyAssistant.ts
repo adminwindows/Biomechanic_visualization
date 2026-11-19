@@ -79,11 +79,11 @@ function text(value: unknown, label: string, maximum: number): string {
   return value.trim();
 }
 export function validateStudyProposal(input: unknown, state: LabState): StudyProposal {
-  const raw = record(input, 'Study proposal');
-  exactKeys(raw, ['format', 'version', 'target', 'basis', 'question', 'rationale', 'changes'], 'Study proposal');
-  if (raw.format !== 'biomechanics-study-proposal' || raw.version !== 1 || raw.target !== 'B') throw new Error('Use study-proposal version 1 targeting B only.');
-  if (raw.basis !== studyBasis(state)) throw new Error('The A baseline has changed. Prepare a fresh exchange or recalculate this study before applying it.');
-  if (!Array.isArray(raw.changes) || raw.changes.length !== 1) throw new Error('A controlled proposal must change exactly one allowed parameter; split multiple changes into separate studies.');
+  const raw = record(input, 'Setup proposal');
+  exactKeys(raw, ['format', 'version', 'target', 'basis', 'question', 'rationale', 'changes'], 'Setup proposal');
+  if (raw.format !== 'biomechanics-study-proposal' || raw.version !== 1 || raw.target !== 'B') throw new Error('Import the proposal format shown in the preview, with B as the target.');
+  if (raw.basis !== studyBasis(state)) throw new Error('The A baseline has changed. Prepare a fresh exchange or recalculate the change before applying it.');
+  if (!Array.isArray(raw.changes) || raw.changes.length !== 1) throw new Error('Each proposal can change one setting. Try each adjustment separately.');
   const change = record(raw.changes[0], 'Parameter change');
   exactKeys(change, ['parameter', 'value'], 'Parameter change');
   if (typeof change.parameter !== 'string' || !Object.hasOwn(STUDY_PARAMETERS, change.parameter)) throw new Error('Choose a supported numerical geometry parameter. Load, body, model, range and code cannot be imported.');
@@ -131,8 +131,8 @@ export function reviewStudyProposal(state: LabState, input: StudyProposal): Stud
   if (forceValue(state.setups[0]) === null) warnings.push('Actual attachment force is unknown. Supply a force measurement or a justified mass-to-force factor before drawing a quantitative conclusion.');
   if (state.setups[0].slack) warnings.push('Slack cable routing is unknown; zero tension does not establish a clear hanging path.');
   if (state.setups[0].exploration) warnings.push('A currently overrides declared equipment adjustment bounds. The proposal retains that exploration setting, including its limitations.');
-  if (state.lockEquipment && proposal.changes[0].parameter === 'pulleyHeight') warnings.push('Applying this placement study turns off Same equipment so B can have a different outlet height.');
-  if (!compatible(...state.setups)) warnings.push('The current A/B coordinates are incompatible. This study replaces B with a copy of A before changing one parameter; the previous B is not its control.');
+  if (state.lockEquipment && proposal.changes[0].parameter === 'pulleyHeight') warnings.push('Applying this change turns off Same equipment so B can have a different outlet height.');
+  if (!compatible(...state.setups)) warnings.push('The current A/B coordinates are incompatible. Applying this change replaces B with a copy of A and one adjustment.');
   const differences = comparisonDifferences(state).filter(row => row.different);
   if (differences.length > 1) warnings.push(`The current A/B comparison differs in ${differences.length} listed settings. Its observed difference cannot be attributed to this single variable without controlling the others.`);
   const unmeasured = Object.entries(state.profiles[0].provenance).filter(([, p]) => p !== 'measured').map(([key]) => key);
@@ -158,7 +158,7 @@ export function interpretStudyQuestion(question: string, state: LabState): { req
   else if (/upper.?arm|humer/.test(source)) parameter = 'upperArmAngle';
   else if (/plane|scaption/.test(source)) parameter = 'movementPlane';
   else if (/tilt|incline|backrest|lean/.test(source)) parameter = 'tilt';
-  if (!parameter || !available.includes(parameter)) return { request: null, explanation: 'The local rules could not map this question to an editable parameter in A. Choose a structured variable and goal below. This tool does not infer anatomy or answer general training questions.' };
+  if (!parameter || !available.includes(parameter)) return { request: null, explanation: 'Choose the setting and goal above. This question did not match an available setting for A.' };
   const goal: StudyGoal = /even|uniform|flat.*curve/.test(source) ? 'evenness' : /(?:more|higher|increase).{0,20}(?:resistance|moment|force|mean)/.test(source) ? 'increase-mean' : /(?:less|lower|reduce).{0,20}(?:resistance|moment|force|mean)/.test(source) ? 'reduce-mean' : 'test-change';
   const direction = /lower|closer|decrease|narrower|less bend/.test(source) ? -1 : 1;
   const amount = source.match(/(?:by|±|\+|-)\s*(\d+(?:\.\d+)?)\s*(cm|mm|m|degrees?|°)/);
@@ -173,7 +173,7 @@ export async function buildStudyPlan(state: LabState, request: StudyRequest): Pr
   for (const direction of directions) {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     try {
-      candidates.push(reviewStudyProposal(state, { format: 'biomechanics-study-proposal', version: 1, target: 'B', basis: studyBasis(state), question: request.question.trim() || `How does ${STUDY_PARAMETERS[request.parameter].label.toLowerCase()} affect the external contribution at fixed body, load and range?`, rationale: 'A deterministic one-variable counterfactual. The numerical result is calculated locally by the current mechanics model.', changes: [{ parameter: request.parameter, value: studyParameterValue(state.setups[0], request.parameter) + direction * request.step }] }));
+      candidates.push(reviewStudyProposal(state, { format: 'biomechanics-study-proposal', version: 1, target: 'B', basis: studyBasis(state), question: request.question.trim() || `How does ${STUDY_PARAMETERS[request.parameter].label.toLowerCase()} affect the external contribution at fixed body, load and range?`, rationale: 'Calculated from A with one setting changed and the same load, body dimensions and movement range.', changes: [{ parameter: request.parameter, value: studyParameterValue(state.setups[0], request.parameter) + direction * request.step }] }));
     } catch (error) { rejected.push(error instanceof Error ? error.message : 'Candidate could not be evaluated.'); }
   }
   const eligible = candidates.filter(candidate => candidate.comparable && candidate.fullRangeClear.every(Boolean));

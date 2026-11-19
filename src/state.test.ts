@@ -18,6 +18,17 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("portable comparisons", () => {
+  it("updates an old factory exercise name while retaining custom names and settings", () => {
+    const saved = createInitialState();
+    saved.setups[0].preset = "classic";
+    saved.setups[0].name = "Horizontal torso";
+    saved.setups[0].pulleyHeight = 1.9;
+    saved.setups[1].name = "My cable setup";
+    const restored = validateState(saved);
+    expect(restored.setups[0]).toMatchObject({ name: "Bent-over cable pullover", pulleyHeight: 1.9 });
+    expect(restored.setups[1].name).toBe("My cable setup");
+  });
+
   it("round-trips independent setup and profile snapshots, provenance and locks", () => {
     const state = createInitialState();
     state.profiles[0] = editMeasurement(state.profiles[0], "upperArm", 0.37);

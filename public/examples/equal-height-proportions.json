@@ -5,7 +5,7 @@
   "setups": [
     {
       "preset": "classic",
-      "name": "Pullover · 70 cm straight-arm reach",
+      "name": "Bent-over cable pullover (70 cm reach)",
       "kind": "standing",
       "facing": -1,
       "tilt": 90,
@@ -34,7 +34,7 @@
     },
     {
       "preset": "classic",
-      "name": "Pullover · 77 cm straight-arm reach",
+      "name": "Bent-over cable pullover (77 cm reach)",
       "kind": "standing",
       "facing": -1,
       "tilt": 90,

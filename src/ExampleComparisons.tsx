@@ -27,9 +27,9 @@ export function ExampleComparisons({ onLoad, onNotice }: { onLoad: (state: LabSt
     }
   }
   return <details className="workspace-drawer" id="example-comparisons">
-    <summary><span>Example comparisons</span><span className="drawer-description">Three ready-to-explore questions</span></summary>
+    <summary><span>Example comparisons</span></summary>
     <div className="drawer-body">
-      <p className="small-note">Load a complete comparison, then change one setting. These use fictional dimensions and explicit load assumptions. Your previous comparison remains available through Undo.</p>
+      <p className="small-note">These examples use illustrative dimensions. Undo returns to your previous pair.</p>
       <div className="catalog-list">{examples.map(example => <div className="catalog-item" key={example.file}>
         <button className="catalog-pick" disabled={loading} onClick={() => void load(example.file)}><strong>{example.title}</strong><span>{example.description}</span></button>
         <a href={exampleURL(example.file)} download aria-label={`Download ${example.title}`}>JSON</a>

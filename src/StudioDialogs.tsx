@@ -13,7 +13,7 @@ export function StudioDialog({ open, title, children, onClose, className = '' }:
     } else if (!open && dialog.open) dialog.close();
   }, [open]);
   return <dialog ref={ref} className={`studio-dialog ${className}`} aria-label={title} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) { const box=event.currentTarget.getBoundingClientRect(); if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)onClose(); } }}>
-    <header className="dialog-heading"><div><span className="overline">BIOMECHANICS LAB</span><h2>{title}</h2></div><button className="dialog-close" aria-label={`Close ${title}`} onClick={onClose}>×</button></header>
+    <header className="dialog-heading"><h2>{title}</h2><button className="dialog-close" aria-label={`Close ${title}`} onClick={onClose}>×</button></header>
     <div className="dialog-content">{children}</div>
   </dialog>;
 }

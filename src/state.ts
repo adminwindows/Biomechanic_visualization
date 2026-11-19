@@ -1,3 +1,4 @@
+import { legacyExerciseNames } from './legacyExerciseNames';
 import { deploymentStorage as localStorage } from './deploymentStorage';
 import {
   defaultProfile, presets, MODEL_VERSION, compatible, getDefinition, actualForce,
@@ -251,6 +252,9 @@ export function validateSetup(input: unknown, label = 'Equipment setup'): Setup 
     } else if (['wrist-flexion', 'wrist-extension', 'forearm-rotation'].includes(result.model ?? 'pullover')) {
       if (result.handMass === undefined) throw new Error(`${label} requires a declared moving hand mass for segment gravity.`);
     } else if (result.upperArmMass === undefined || result.forearmMass === undefined) throw new Error(`${label} requires declared upper-arm and forearm masses for segment gravity.`);
+  }
+  if (result.name === legacyExerciseNames[result.preset]) {
+    result.name = presets.find(preset => preset.preset === result.preset)?.name ?? result.name;
   }
   const definition = getDefinition(result);
   if (min < definition.minAngle || max > definition.maxAngle) throw new Error(`${label} movement range must remain within ${definition.minAngle}–${definition.maxAngle}${definition.angleUnit} for ${definition.label}.`);

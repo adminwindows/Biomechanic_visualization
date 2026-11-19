@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createInitialState, STORAGE_KEY, type LabState } from '../src/state';
+import { goWorkspace } from './studio-helpers';
 import { studyBasis, type StudyProposal } from '../src/studyAssistant';
 
 const saved = (page: Page) => page.evaluate(key => JSON.parse(localStorage.getItem(key)!) as LabState, STORAGE_KEY);
@@ -12,8 +13,8 @@ function fixture() {
 async function open(page: Page, state = fixture()) {
   await page.addInitScript(({ key, state }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state)); }, { key: STORAGE_KEY, state });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Study planner', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Study assistant', exact: true })).toBeVisible();
+  await goWorkspace(page, 'Try a setup change');
+  await expect(page.getByRole('region', { name: 'Setup change', exact: true })).toBeVisible();
 }
 function proposal(state: LabState): StudyProposal {
   return { format: 'biomechanics-study-proposal', version: 1, target: 'B', basis: studyBasis(state), question: 'Does a higher outlet change the external contribution?', rationale: 'External explanation for local review, not a measured finding.', changes: [{ parameter: 'pulleyHeight', value: state.setups[0].pulleyHeight + .15 }] };
@@ -24,20 +25,21 @@ test('offline planner interprets a question, calculates a review and changes onl
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   const before = await saved(page);
   await context.setOffline(true);
-  await page.getByLabel('Study question', { exact: true }).fill('Lower the pulley by 20 cm and inspect resistance.');
-  await page.getByRole('button', { name: 'Interpret question locally', exact: true }).click();
-  await expect(page.getByLabel('Study variable', { exact: true })).toHaveValue('pulleyHeight');
-  await expect(page.getByLabel('Study change amount', { exact: true })).toHaveValue('0.2');
-  await page.getByRole('button', { name: 'Calculate study preview', exact: true }).click();
-  const review = page.getByRole('region', { name: 'Study proposal review', exact: true });
+  await page.getByText('Describe a change in words', { exact: true }).click();
+  await page.getByLabel('Setup question', { exact: true }).fill('Lower the pulley by 20 cm and inspect resistance.');
+  await page.getByRole('button', { name: 'Fill settings from question', exact: true }).click();
+  await expect(page.getByLabel('Setting to change', { exact: true })).toHaveValue('pulleyHeight');
+  await expect(page.getByLabel(/^Change amount/)).toHaveValue('0.2');
+  await page.getByRole('button', { name: 'Preview change', exact: true }).click();
+  const review = page.getByRole('region', { name: 'Setup change preview', exact: true });
   await expect(review).toBeVisible();
   await expect(review).toContainText('Both region summaries are complete');
   await expect(review).toContainText('Calculated region: 90–140°');
   expect((await saved(page)).setups).toEqual(before.setups);
-  await expect(page.getByRole('button', { name: 'Apply reviewed proposal to B', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Apply change to B', exact: true })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (testInfo.project.name === 'desktop') await page.locator('.study-assistant').screenshot({ path: '/tmp/study-assistant-desktop.png' });
-  await page.getByRole('button', { name: 'Apply reviewed proposal to B', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply change to B', exact: true }).click();
   await expect.poll(async () => (await saved(page)).setups[1].pulleyHeight).toBeCloseTo(before.setups[0].pulleyHeight - .2);
   const after = await saved(page);
   expect(after.setups[0]).toEqual(before.setups[0]); expect(after.profiles[0]).toEqual(before.profiles[0]);
@@ -49,6 +51,7 @@ test('offline planner interprets a question, calculates a review and changes onl
 test('manual exchange shares only selected context and reviews imported geometry before apply', async ({ page }) => {
   await open(page);
   const before = await saved(page);
+  await page.getByText('Use an external AI assistant', { exact: true }).click();
   await page.getByRole('button', { name: 'Prepare exchange preview', exact: true }).click();
   const preview = page.getByLabel('AI exchange preview', { exact: true });
   expect(await preview.inputValue()).not.toContain('"bodyA"');
@@ -64,13 +67,13 @@ test('manual exchange shares only selected context and reviews imported geometry
   const stream = await file.createReadStream(); let text = ''; for await (const chunk of stream!) text += chunk;
   expect(text).toContain('RESPONSE JSON SCHEMA'); expect(text).not.toContain('PRIVATE');
   await page.getByText('Review a proposal returned by an assistant', { exact: true }).click();
-  await page.getByLabel('Import study proposal file', { exact: true }).setInputFiles({ name: 'proposal.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(proposal(before))) });
-  const review = page.getByRole('region', { name: 'Study proposal review', exact: true });
+  await page.getByLabel('Import proposal file', { exact: true }).setInputFiles({ name: 'proposal.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(proposal(before))) });
+  const review = page.getByRole('region', { name: 'Setup change preview', exact: true });
   await expect(review).toContainText('Unverified external explanation');
   await expect(review).toContainText('External proposal · locally recalculated');
   expect((await saved(page)).setups).toEqual(before.setups);
-  await expect(page.getByRole('button', { name: 'Apply reviewed proposal to B', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Apply reviewed proposal to B', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Apply change to B', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply change to B', exact: true }).click();
   await expect.poll(async () => (await saved(page)).setups[1].pulleyHeight).toBeCloseTo(before.setups[0].pulleyHeight + .15);
   expect((await saved(page)).setups[0]).toEqual(before.setups[0]);
 });
@@ -78,17 +81,18 @@ test('manual exchange shares only selected context and reviews imported geometry
 test('invalid AI fields and stale planner input cannot apply an old review', async ({ page }) => {
   await open(page);
   const before = await saved(page);
+  await page.getByText('Use an external AI assistant', { exact: true }).click();
   await page.getByText('Review a proposal returned by an assistant', { exact: true }).click();
-  await page.getByLabel('Study proposal JSON', { exact: true }).fill(JSON.stringify({ ...proposal(before), execute: 'fetch("https://example.invalid")' }));
+  await page.getByLabel('Proposal JSON', { exact: true }).fill(JSON.stringify({ ...proposal(before), execute: 'fetch("https://example.invalid")' }));
   await page.getByRole('button', { name: 'Validate & recalculate proposal', exact: true }).click();
   await expect(page.locator('.study-assistant').getByRole('status')).toContainText('unsupported fields');
-  await expect(page.getByRole('region', { name: 'Study proposal review', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Setup change preview', exact: true })).toHaveCount(0);
   expect((await saved(page)).setups).toEqual(before.setups);
-  await page.getByRole('button', { name: 'Calculate study preview', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Apply reviewed proposal to B', exact: true })).toBeEnabled();
-  await page.getByLabel('Study change amount', { exact: true }).fill('0.3');
-  await expect(page.getByRole('button', { name: 'Apply reviewed proposal to B', exact: true })).toBeDisabled();
-  await expect(page.getByRole('region', { name: 'Study proposal review', exact: true })).toContainText('inputs changed');
+  await page.getByRole('button', { name: 'Preview change', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Apply change to B', exact: true })).toBeEnabled();
+  await page.getByLabel(/^Change amount/).fill('0.3');
+  await expect(page.getByRole('button', { name: 'Apply change to B', exact: true })).toBeDisabled();
+  await expect(page.getByRole('region', { name: 'Setup change preview', exact: true })).toContainText('inputs changed');
 });
 
 test('planner draft protects workspace reload until exported or explicitly discarded', async ({ page }) => {
@@ -97,16 +101,17 @@ test('planner draft protects workspace reload until exported or explicitly disca
     const detail = { errors: [] as string[] }; window.dispatchEvent(new CustomEvent('biomechanics:flush-workspaces', { detail })); return detail.errors;
   });
   expect(await flush()).toEqual([]);
-  await page.getByLabel('Study question', { exact: true }).fill('Unfinished calibration question');
-  expect((await flush()).join(' ')).toContain('Study planner has an unsaved draft');
+  await page.getByText('Describe a change in words', { exact: true }).click();
+  await page.getByLabel('Setup question', { exact: true }).fill('Unfinished calibration question');
+  expect((await flush()).join(' ')).toContain('You have an unfinished setup change');
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export planner draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Export pending change', exact: true }).click();
   const file = await download; const stream = await file.createReadStream(); let text = ''; for await (const chunk of stream!) text += chunk;
   expect(JSON.parse(text)).toMatchObject({ format: 'biomechanics-study-draft', question: 'Unfinished calibration question' });
   expect(text).not.toContain('PRIVATE');
   expect(await flush()).toEqual([]);
-  await page.getByLabel('Study question', { exact: true }).fill('Later unsaved change');
-  await page.getByRole('button', { name: 'Discard planner changes', exact: true }).click();
-  await expect(page.getByLabel('Study question', { exact: true })).toHaveValue('Unfinished calibration question');
+  await page.getByLabel('Setup question', { exact: true }).fill('Later unsaved change');
+  await page.getByRole('button', { name: 'Discard pending change', exact: true }).click();
+  await expect(page.getByLabel('Setup question', { exact: true })).toHaveValue('Unfinished calibration question');
   expect(await flush()).toEqual([]);
 });

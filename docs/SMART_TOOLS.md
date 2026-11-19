@@ -2,19 +2,19 @@
 
 The implemented tools do not connect to an AI provider. They have no API key, remote model, chat history, automatic upload or literature search. Further AI integration is paused for discussion; the existing local planner and manual exchange remain available.
 
-## Local study planner
+## Try a setup change
 
-The planner uses explicit rules, not a language model. It recognizes a limited vocabulary for pulley height, pelvis position, torso inclination, fixed arm/elbow angles, movement plane and grip width, where the current joint model supports them. A question such as “lower the pulley by 20 cm” can populate the structured controls. Ambiguous or unsupported requests require choosing those controls directly. Review the interpreted variable, amount and direction: the parser is deliberately limited.
+Open **Try a setup change** to preview how changing one setting in exercise A affects resistance. Select the setting, amount and direction, then choose **Preview change**. **Describe a change in words** can fill the controls using local rules. It recognizes a limited vocabulary for pulley height, pelvis position, torso inclination, fixed arm/elbow angles, movement plane and grip width, where the current joint model supports them. A question such as “lower the pulley by 20 cm” can populate the structured controls. Ambiguous or unsupported requests require choosing those controls directly. Review the interpreted variable, amount and direction: the parser is deliberately limited.
 
 For a specified change, the planner builds one candidate. For higher/lower mean resistance or a more even curve, it compares two neighboring values at the selected step. This is neither a global optimizer nor an exercise recommendation. The calculation uses the existing geometry/force engine, selected movement region and original full range. It reports unavailable portions, current comparison differences, assumptions and suggested measurements. The ranking considers computability and represented clearance; neither establishes personal safety.
 
-Nothing changes until **Apply reviewed proposal to B**. B is then replaced with a copy of A plus the selected geometry change. A, its body measurements, the load convention and original movement range remain unchanged. An outlet-height study releases the same-equipment lock, as disclosed in the review. Undo restores the previous comparison. A proposal must be recalculated if its baseline or planner inputs change.
+Nothing changes until **Apply change to B**. B is then replaced with a copy of A plus the selected geometry change. A, its body measurements, the load convention and original movement range remain unchanged. An outlet-height study releases the same-equipment lock, as disclosed in the review. Undo restores the previous comparison. A proposal must be recalculated if its baseline or planner inputs change.
 
-The planner does not invent muscles, estimate muscle activation, infer hypertrophy, read research, learn from saved work or extend the underlying model. It currently operates on the joint/exercise workspace; compound and machine studies retain their own analysis and notebook workflows.
+This tool does not invent muscles, estimate muscle activation, infer hypertrophy, read research, learn from saved work or extend the underlying model. It currently operates on the joint/exercise workspace; compound and machine studies retain their own analysis and notebook workflows.
 
 ## Optional manual AI exchange
 
-1. Choose which context to include: the question, A setup, A body dimensions/provenance, and/or A calculated summaries. Only the question is selected initially.
+1. Expand **Use an external AI assistant** and choose which context to include: the question, A setup, A body dimensions/provenance, and/or A calculated summaries. Only the question is selected initially.
 2. Prepare and inspect the exact text before copying or downloading it. Every exchange also includes model/coordinate metadata, permitted parameters and global bounds, a baseline revision marker and the response schema. The revision marker is a change detector, not authentication or encryption. Previous B, library entries and comparison notes are excluded; free text or names you select can still contain personal information.
 3. If desired, manually give this text to an external assistant. This is the only step that would send it to that service. Its privacy policy and network requirements apply there.
 4. Paste or import the assistant's JSON response. The app rejects unsupported fields, code, nonfinite/out-of-bounds values, changed baselines, unsupported parameters and multiple simultaneous changes. Body dimensions, load, exercise model and movement range cannot be changed through this proposal format.

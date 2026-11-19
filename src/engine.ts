@@ -166,14 +166,14 @@ export type ExerciseDefinition = {
   angleUnit?:'°'|'cm';coordinateScale?:number;
 };
 export const definitions: ExerciseDefinition[] = [
-  {id:'pullover',family:'Pullover',label:'Cable pullover',angleLabel:'Upper-arm elevation from torso',action:'Bring the arms toward the torso',metricKey:'symmetric-pullover-resistance',plane:'side',minAngle:0,maxAngle:200,unit:'N·m',forceConvention:'Actual force per attachment; total symmetric contribution',actionDirection:-1},
-  {id:'curl',family:'Elbow flexion',label:'Cable curl',angleLabel:'Elbow flexion',action:'Flex the elbow',metricKey:'elbow-flexion-resistance',plane:'side',minAngle:0,maxAngle:160,unit:'N·m',forceConvention:'Actual force per loaded handle',actionDirection:1},
-  {id:'extension',family:'Elbow extension',label:'Triceps extension',angleLabel:'Elbow flexion',action:'Extend the elbow',metricKey:'elbow-extension-resistance',plane:'side',minAngle:0,maxAngle:160,unit:'N·m',forceConvention:'Actual force per loaded handle',actionDirection:-1},
-  {id:'raise',family:'Lateral raise',label:'Lateral raise',angleLabel:'Arm elevation from torso',action:'Raise the arm away from the torso',metricKey:'unilateral-shoulder-elevation-resistance',plane:'front',minAngle:0,maxAngle:160,unit:'N·m',forceConvention:'One loaded arm; cable force or dumbbell weight',actionDirection:1},
-  {id:'fly',family:'Shoulder fly',label:'Cable fly',angleLabel:'Horizontal adduction from lateral',action:'Bring the hands forward and together',metricKey:'bilateral-shoulder-adduction-resistance',plane:'top',minAngle:0,maxAngle:120,unit:'N·m',forceConvention:'Independent handles; sum of two mirrored shoulder contributions',actionDirection:1},
-  {id:'hip',family:'Hip movement',label:'Cable hip extension',angleLabel:'Hip extension from neutral',action:'Move the thigh backward',metricKey:'unilateral-hip-extension-resistance',plane:'side',minAngle:-30,maxAngle:90,unit:'N·m',forceConvention:'One ankle attachment; hip contribution',actionDirection:1},
-  {id:'machine',family:'Machine illustration',label:'Unknown pullover machine',angleLabel:'Upper-arm elevation from torso',action:'Bring the arms toward the torso',metricKey:'unknown-machine',plane:'side',minAngle:0,maxAngle:200,unit:'N·m',forceConvention:'Unknown mechanism; no quantitative resistance',actionDirection:-1},
-  {id:'reverse-fly',family:'Shoulder reverse fly',label:'Reverse fly',angleLabel:'Horizontal adduction from lateral',action:'Open the arms away from the front',metricKey:'shoulder-horizontal-abduction-resistance',plane:'top',minAngle:0,maxAngle:120,unit:'N·m',forceConvention:'Independent handles; total contribution of the loaded arms',actionDirection:-1},
+  {id:'pullover',family:'Pullovers',label:'Pullover',angleLabel:'Upper-arm elevation from torso',action:'Bring the arms toward the torso',metricKey:'symmetric-pullover-resistance',plane:'side',minAngle:0,maxAngle:200,unit:'N·m',forceConvention:'Actual force per attachment; total symmetric contribution',actionDirection:-1},
+  {id:'curl',family:'Biceps curls',label:'Biceps curl',angleLabel:'Elbow flexion',action:'Flex the elbow',metricKey:'elbow-flexion-resistance',plane:'side',minAngle:0,maxAngle:160,unit:'N·m',forceConvention:'Actual force per loaded handle',actionDirection:1},
+  {id:'extension',family:'Triceps extensions',label:'Triceps extension',angleLabel:'Elbow flexion',action:'Extend the elbow',metricKey:'elbow-extension-resistance',plane:'side',minAngle:0,maxAngle:160,unit:'N·m',forceConvention:'Actual force per loaded handle',actionDirection:-1},
+  {id:'raise',family:'Shoulder raises',label:'Shoulder raise',angleLabel:'Arm elevation from torso',action:'Raise the arm away from the torso',metricKey:'unilateral-shoulder-elevation-resistance',plane:'front',minAngle:0,maxAngle:160,unit:'N·m',forceConvention:'One loaded arm; cable force or dumbbell weight',actionDirection:1},
+  {id:'fly',family:'Chest flyes',label:'Chest fly',angleLabel:'Horizontal adduction from lateral',action:'Bring the hands forward and together',metricKey:'bilateral-shoulder-adduction-resistance',plane:'top',minAngle:0,maxAngle:120,unit:'N·m',forceConvention:'Independent handles; sum of two mirrored shoulder contributions',actionDirection:1},
+  {id:'hip',family:'Hip extension',label:'Hip extension',angleLabel:'Hip extension from neutral',action:'Move the thigh backward',metricKey:'unilateral-hip-extension-resistance',plane:'side',minAngle:-30,maxAngle:90,unit:'N·m',forceConvention:'One ankle attachment; hip contribution',actionDirection:1},
+  {id:'machine',family:'Pullover machines',label:'Machine pullover',angleLabel:'Upper-arm elevation from torso',action:'Bring the arms toward the torso',metricKey:'unknown-machine',plane:'side',minAngle:0,maxAngle:200,unit:'N·m',forceConvention:'Unknown mechanism; no quantitative resistance',actionDirection:-1},
+  {id:'reverse-fly',family:'Reverse flyes',label:'Reverse fly',angleLabel:'Horizontal adduction from lateral',action:'Open the arms away from the front',metricKey:'shoulder-horizontal-abduction-resistance',plane:'top',minAngle:0,maxAngle:120,unit:'N·m',forceConvention:'Independent handles; total contribution of the loaded arms',actionDirection:-1},
   {id:'hip-abduction',family:'Hip abduction',label:'Hip abduction',angleLabel:'Hip abduction from neutral',action:'Move the leg laterally away from the pelvis',metricKey:'hip-abduction-resistance',plane:'front',minAngle:-30,maxAngle:70,unit:'N·m',forceConvention:'One ankle attachment',actionDirection:1},
   {id:'hip-adduction',family:'Hip adduction',label:'Hip adduction',angleLabel:'Hip abduction from neutral',action:'Bring the leg toward the midline',metricKey:'hip-adduction-resistance',plane:'front',minAngle:-30,maxAngle:70,unit:'N·m',forceConvention:'One ankle attachment',actionDirection:-1},
   {id:'knee-extension',family:'Knee extension',label:'Knee extension',angleLabel:'Knee flexion',action:'Extend the knee',metricKey:'knee-extension-resistance',plane:'side',minAngle:0,maxAngle:150,unit:'N·m',forceConvention:'One ankle attachment; prescribed thigh support',actionDirection:-1},
@@ -181,7 +181,7 @@ export const definitions: ExerciseDefinition[] = [
   {id:'wrist-flexion',family:'Wrist flexion',label:'Wrist curl',angleLabel:'Wrist flexion',action:'Flex the wrist',metricKey:'wrist-flexion-resistance',plane:'side',minAngle:-70,maxAngle:90,unit:'N·m',forceConvention:'One grip load; forearm fixed',actionDirection:1},
   {id:'wrist-extension',family:'Wrist extension',label:'Wrist extension',angleLabel:'Wrist flexion',action:'Extend the wrist',metricKey:'wrist-extension-resistance',plane:'side',minAngle:-70,maxAngle:90,unit:'N·m',forceConvention:'One grip load; forearm fixed',actionDirection:-1},
   {id:'forearm-rotation',family:'Forearm rotation',label:'Forearm rotation with offset handle',angleLabel:'Handle rotation about forearm',action:'Rotate in the positive defined forearm direction',metricKey:'forearm-positive-rotation-resistance',plane:'front',minAngle:-180,maxAngle:180,unit:'N·m',forceConvention:'Explicit offset lever; forearm fixed',actionDirection:1},
-  {id:'shrug',family:'Shoulder-girdle elevation',label:'Shrug',angleLabel:'Shoulder-girdle elevation',action:'Elevate the shoulder girdle',metricKey:'shoulder-girdle-elevation-force',plane:'front',minAngle:0,maxAngle:12,unit:'N',angleUnit:'cm',coordinateScale:.01,forceConvention:'Vertical translational contribution; prescribed shoulder-girdle path',actionDirection:1},
+  {id:'shrug',family:'Shrugs',label:'Shrug',angleLabel:'Shoulder-girdle elevation',action:'Elevate the shoulder girdle',metricKey:'shoulder-girdle-elevation-force',plane:'front',minAngle:0,maxAngle:12,unit:'N',angleUnit:'cm',coordinateScale:.01,forceConvention:'Vertical translational contribution; prescribed shoulder-girdle path',actionDirection:1},
 ];
 export function getDefinition(setup:Setup):ExerciseDefinition {
   const definition = definitions.find(item => item.id === (setup.model ?? 'pullover'));
@@ -941,7 +941,7 @@ const base: Setup = {
   preset: "classic",
   model:'pullover',
   resistance:'cable',
-  name: "Horizontal torso",
+  name: "Bent-over cable pullover",
   kind: "standing",
   facing: -1,
   tilt: 90,
@@ -967,7 +967,7 @@ export const presets: Setup[] = [
   variant({}),
   variant({
     preset: "bench",
-    name: "Bench · 60°",
+    name: "Incline cable pullover (60° bench)",
     kind: "bench",
     facing: 1,
     tilt: 60,
@@ -979,12 +979,12 @@ export const presets: Setup[] = [
   }),
   variant({
     preset: "classic-far",
-    name: "Horizontal torso · farther away",
+    name: "Bent-over cable pullover (farther from pulley)",
     hipX: 2.25,
   }),
   variant({
     preset: "outside",
-    name: "Facing away · outside",
+    name: "Standing cable pullover (back to pulleys)",
     facing: 1,
     tilt: 0,
     hipX: 0.85,
@@ -994,7 +994,7 @@ export const presets: Setup[] = [
   }),
   variant({
     preset: "inside",
-    name: "Inside · leaning 60°",
+    name: "Forward-leaning cable pullover (behind pulleys)",
     facing: 1,
     tilt: 60,
     hipX: -0.38 - 0.59 * Math.sin(60 * RAD),
@@ -1004,7 +1004,7 @@ export const presets: Setup[] = [
   }),
   variant({
     preset: "inside-upright",
-    name: "Inside · upright",
+    name: "Standing cable pullover (behind pulleys)",
     facing: 1,
     tilt: 0,
     hipX: -0.35,
@@ -1014,7 +1014,7 @@ export const presets: Setup[] = [
   }),
   variant({
     preset: "bench-flat",
-    name: "Bench · flat",
+    name: "Flat-bench cable pullover",
     kind: "bench",
     facing: 1,
     tilt: 0,
@@ -1026,7 +1026,7 @@ export const presets: Setup[] = [
   }),
   variant({
     preset: "bench-75",
-    name: "Bench · 75°",
+    name: "Incline cable pullover (75° bench)",
     kind: "bench",
     facing: 1,
     tilt: 75,
@@ -1036,15 +1036,15 @@ export const presets: Setup[] = [
     cables: 2,
     range: [80, 190],
   }),
-  variant({preset:'classic-kneeling',name:'Classic pullover · kneeling',model:'pullover',posture:'kneeling',facing:-1,tilt:45,hipHeight:0.49,hipX:1.25,pulleyHeight:2.1,range:[60,180]}),
-  variant({preset:'curl-low',name:'Low-cable curl · arm at side',model:'curl',facing:1,tilt:0,hipX:0.75,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.42,attachmentSpacing:0,upperArmAngle:0,range:[10,135]}),
-  variant({preset:'curl-bayesian',name:'Bayesian curl · arm behind torso',model:'curl',facing:1,tilt:0,hipX:0.85,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.42,attachmentSpacing:0,upperArmAngle:-35,range:[20,135]}),
-  variant({preset:'extension-pushdown',name:'High-cable triceps pushdown',model:'extension',facing:-1,tilt:0,hipX:0.65,hipHeight:0.90,pulleyHeight:2.25,outletSpacing:0.42,upperArmAngle:0,range:[10,120]}),
+  variant({preset:'classic-kneeling',name:'Kneeling cable pullover',model:'pullover',posture:'kneeling',facing:-1,tilt:45,hipHeight:0.49,hipX:1.25,pulleyHeight:2.1,range:[60,180]}),
+  variant({preset:'curl-low',name:'Standing single-arm cable curl',model:'curl',facing:1,tilt:0,hipX:0.75,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.42,attachmentSpacing:0,upperArmAngle:0,range:[10,135]}),
+  variant({preset:'curl-bayesian',name:'Bayesian cable curl',model:'curl',facing:1,tilt:0,hipX:0.85,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.42,attachmentSpacing:0,upperArmAngle:-35,range:[20,135]}),
+  variant({preset:'extension-pushdown',name:'Single-arm triceps pushdown',model:'extension',facing:-1,tilt:0,hipX:0.65,hipHeight:0.90,pulleyHeight:2.25,outletSpacing:0.42,upperArmAngle:0,range:[10,120]}),
   variant({preset:'extension-overhead',name:'Overhead cable triceps extension',model:'extension',facing:1,tilt:0,hipX:0.85,hipHeight:0.90,pulleyHeight:0.75,outletSpacing:0.42,upperArmAngle:180,range:[15,130]}),
-  variant({preset:'raise-cable',name:'Unilateral cable lateral raise',model:'raise',facing:1,tilt:0,hipX:0.75,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.10,planeOffset:-0.20,range:[5,120]}),
-  variant({preset:'raise-dumbbell',name:'Dumbbell lateral raise · supported lean',model:'raise',resistance:'dumbbell',loadMass:5,facing:1,tilt:15,hipX:0.75,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.10,range:[0,120]}),
-  variant({preset:'fly-cable',name:'Cable fly · two independent handles',model:'fly',facing:1,tilt:0,hipX:0.75,hipHeight:0.90,pulleyHeight:1.49,outletSpacing:2.0,planeOffset:-0.40,attachmentSpacing:0,cables:2,elbow:15,range:[0,90]}),
-  variant({preset:'hip-extension',name:'Cable hip extension · ankle attachment',model:'hip',facing:-1,tilt:0,hipX:0.85,hipHeight:0.92,pulleyHeight:0.10,outletSpacing:0.30,attachmentSpacing:0,range:[0,50]}),
-  variant({preset:'machine-unknown',name:'Pullover machine · mechanism unknown',model:'machine',resistance:'unknown',forceKnown:false,kind:'bench',facing:1,tilt:75,hipX:1.1,hipHeight:0.46,range:[50,170]}),
+  variant({preset:'raise-cable',name:'Single-arm cable lateral raise',model:'raise',facing:1,tilt:0,hipX:0.75,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.10,planeOffset:-0.20,range:[5,120]}),
+  variant({preset:'raise-dumbbell',name:'Leaning dumbbell lateral raise',model:'raise',resistance:'dumbbell',loadMass:5,facing:1,tilt:15,hipX:0.75,hipHeight:0.90,pulleyHeight:0.10,outletSpacing:0.10,range:[0,120]}),
+  variant({preset:'fly-cable',name:'Standing cable chest fly',model:'fly',facing:1,tilt:0,hipX:0.75,hipHeight:0.90,pulleyHeight:1.49,outletSpacing:2.0,planeOffset:-0.40,attachmentSpacing:0,cables:2,elbow:15,range:[0,90]}),
+  variant({preset:'hip-extension',name:'Cable glute kickback',model:'hip',facing:-1,tilt:0,hipX:0.85,hipHeight:0.92,pulleyHeight:0.10,outletSpacing:0.30,attachmentSpacing:0,range:[0,50]}),
+  variant({preset:'machine-unknown',name:'Pullover machine',model:'machine',resistance:'unknown',forceKnown:false,kind:'bench',facing:1,tilt:75,hipX:1.1,hipHeight:0.46,range:[50,170]}),
 ];
 presets.push(...extendedPresets(base));

@@ -1,3 +1,4 @@
+import { legacyExerciseNames } from "./legacyExerciseNames";
 import { getDefinition, presets, type Model, type Setup } from "./engine";
 
 /** Navigation metadata describes each preset's initial setup, not muscle recruitment. */
@@ -271,7 +272,7 @@ export function metadataForSetup(setup: Setup): CatalogMetadata {
 
 for (const setup of presets) {
   const metadata = catalogMetadata[setup.preset] ?? metadataForSetup(setup);
-  catalogMetadata[setup.preset] = { ...metadata, aliases: unique([...metadata.aliases, setup.name, setup.preset]) };
+  catalogMetadata[setup.preset] = { ...metadata, aliases: unique([...metadata.aliases, setup.name, setup.preset, legacyExerciseNames[setup.preset]].filter(Boolean)) };
 }
 
 export const catalogEntries: CatalogEntry[] = presets.map((setup) => {
