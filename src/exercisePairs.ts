@@ -93,8 +93,8 @@ export function createJointPairChooser() {
     const a = state.setups[0];
     const b = state.setups[1];
     if (side === 1 && (id !== b.preset || !jointPairFits(a, b))) {
-      if (selectedDraft && jointPairFits(a, selectedDraft.setup)) replace(1, selectedDraft.setup, selectedDraft);
-      else if (id === a.preset) replace(1, a);
+      if (id === a.preset) replace(1, a);
+      else if (selectedDraft && jointPairFits(a, selectedDraft.setup)) replace(1, selectedDraft.setup, selectedDraft);
       else if (requested && jointPairFits(a, requested)) replace(1, requested);
       else return { state, notice: 'These setups use different movements or ranges.' };
     }

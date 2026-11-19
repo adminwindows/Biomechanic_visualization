@@ -65,7 +65,8 @@ export function ComparisonResults({ state, results }: Props) {
 
   return <section className="comparison-results" aria-label="Resistance comparison">
     <h2>Resistance comparison</h2>
-    <p className="comparison-results__finding">{pointDifference(state, results)}</p>
+    <p className="comparison-results__finding">{pointDifference(state, results)}{differentLoads &&
+      ' A uses ' + loadLabel(a) + ' and B uses ' + loadLabel(b) + '.'}</p>
     <table>
       <thead><tr><th scope="col">Measure</th><th scope="col">A</th><th scope="col">B</th></tr></thead>
       <tbody>
@@ -79,7 +80,7 @@ export function ComparisonResults({ state, results }: Props) {
           {sides.map(i => <td key={i}>{formatSigned(summaries?.[i].mean ?? null, definitions[i].unit)}
             {summaries && !summaries[i].complete && <small>{gapLabel(summaries[i], coordinateUnit)}</small>}</td>)}
         </tr>
-        <tr><th scope="row">Applied load{differentLoads && <small>Loads differ between A and B</small>}</th>{sides.map(i => <td key={i}>{loadLabel(state.setups[i])}</td>)}</tr>
+        <tr><th scope="row">Applied load</th>{sides.map(i => <td key={i}>{loadLabel(state.setups[i])}</td>)}</tr>
       </tbody>
     </table>
     {sameMeasure && <p className="comparison-results__key">{definitions[0].action}. Positive values resist this movement. Negative values assist it.</p>}

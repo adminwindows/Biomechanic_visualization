@@ -42,7 +42,8 @@ function ExerciseSelect({ side, choices, value, placeholder, hintId, extraA, onP
   const [query, setQuery] = useState('');
   const letter = side === 0 ? 'A' : 'B';
   const terms = searchable(query).split(' ').filter(Boolean);
-  const matches = searching && terms.length ? choices.filter(choice => {
+  const searchChoices = extraA ? [extraA, ...choices] : choices;
+  const matches = searching && terms.length ? searchChoices.filter(choice => {
     const words = searchable([choice.name, choice.group, ...(choice.aliases ?? [])].join(' '));
     return terms.every(term => words.includes(term));
   }) : [];
@@ -99,20 +100,36 @@ export function ExercisePairPicker(props: Props) {
     options = compoundExercises.filter(entry => compoundPairFits(a, entry)).map(compoundChoice);
   }
   const listedA = allChoices.find(entry => entry.id === aId);
-  const geometryOnly = props.jointSetups && catalogEntries.some(entry => entry.setup.preset === aId && entry.status === 'Geometry only');
+  const listedB = allChoices.find(entry => entry.id === bId);
+  const savedA = props.jointSetups?.[0];
+  const savedB = props.jointSetups?.[1];
+  // Imports can keep a preset ID but supply another name and setup (e.g. a
+  // standing raise built from the leaning-raise preset). Show what is loaded.
+  function activeChoice(listed: Choice | undefined, setup: Setup | undefined): Choice | undefined {
+    if (!setup || listed?.name === setup.name) return listed;
+    return { id: setup.preset, name: setup.name, group: listed?.group ?? getDefinition(setup).family,
+      aliases: listed ? [...(listed.aliases ?? []), listed.name] : [] };
+  }
+  const currentA = activeChoice(listedA, savedA);
+  const currentB = activeChoice(listedB, savedB);
+  const aChoices = listedA && currentA && listedA !== currentA
+    ? allChoices.map(item => item.id === aId ? currentA : item) : allChoices;
+  const geometryOnly = savedA && catalogEntries.some(entry => entry.setup.preset === aId && entry.status === 'Geometry only');
   if (geometryOnly) options = [];
-  const currentA = listedA ?? (props.jointSetups && !geometryOnly && jointPairFits(props.jointSetups[0], props.jointSetups[0])
-    ? { id: aId, name: props.jointSetups[0].name, group: getDefinition(props.jointSetups[0]).family } : undefined);
-  // A customized plane or range may no longer match its preset defaults.
-  // The current variant can still be duplicated and adjusted independently.
-  if (currentA && !options.some(entry => entry.id === aId)) options.push(currentA);
-  const currentB = allChoices.find(entry => entry.id === bId) ?? (props.jointSetups && bFits
-    ? { id: bId, name: props.jointSetups[1].name, group: getDefinition(props.jointSetups[1]).family } : undefined);
-  if (!geometryOnly && bFits && currentB && !options.some(entry => entry.id === bId)) options.push(currentB);
+  // Preserve edited/imported variants that can be compared even if the factory
+  // preset with their ID uses another plane or range.
+  if (currentA && !geometryOnly && (listedA || (savedA && jointPairFits(savedA, savedA)))) {
+    options = options.filter(item => item.id !== aId);
+    options.push(currentA);
+  }
+  if (bFits && currentB && !geometryOnly) {
+    options = options.filter(item => item.id !== bId);
+    options.push(currentB);
+  }
   const activeB = bFits && options.some(entry => entry.id === bId) ? bId : '';
   return <section className="exercise-pair-picker" aria-label="Choose exercises">
-    <ExerciseSelect side={0} choices={allChoices} value={aId} onPick={props.onPick}
-      extraA={listedA ? undefined : { id: aId, name: props.jointSetups?.[0].name ?? 'Current exercise', group: '' }}/>
+    <ExerciseSelect side={0} choices={aChoices} value={aId} onPick={props.onPick}
+      extraA={listedA ? undefined : currentA ?? { id: aId, name: 'Current exercise', group: '' }}/>
     <ExerciseSelect side={1} choices={options.sort(byGroupAndName)} value={activeB} onPick={props.onPick} hintId={hintId}
       placeholder={activeB ? undefined : options.length ? 'Choose a compatible exercise' : 'Choose a modeled exercise in A'}/>
     <small className="pair-hint" id={hintId}>{activeB ? 'B lists compatible exercises. Pick the same exercise twice to compare setups.' :

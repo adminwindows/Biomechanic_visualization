@@ -72,6 +72,15 @@ const workspaceFromHash = (): Workspace => {
   const name = window.location.hash.slice(1);
   return Object.hasOwn(workspaceInfo, name) ? name as Workspace : "compare";
 };
+function jumpToSection(event: React.MouseEvent<HTMLAnchorElement>) {
+  const target = document.getElementById(event.currentTarget.hash.slice(1));
+  if (!target) return;
+  event.preventDefault();
+  if (target instanceof HTMLDetailsElement) target.open = true;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: "start" });
+}
+
 function ArrowIcon({ down = false }: { down?: boolean }) {
   return (
     <svg
@@ -555,7 +564,43 @@ export default function App() {
               Swap A ⇄ B
             </button>
         </div>
-        <ComparisonResults state={state} results={results} />
+        <nav className="compare-jumps" aria-label="Jump to comparison details">
+          <a href="#resistance-curve" onClick={jumpToSection}>Curve</a>
+          <a href="#exercise-movement" onClick={jumpToSection}>Movement</a>
+          <a href="#comparison-details" onClick={jumpToSection}>Details</a>
+        </nav>
+        <div className="comparison-overview">
+          <ComparisonResults state={state} results={results} />
+        <section id="resistance-curve" className="analysis-grid" tabIndex={-1} aria-label="Results">
+          <article className="curve-card">
+            <div className="section-heading">
+              <div>
+                <h2>Resistance across the movement</h2>
+              </div>
+              <div className="legend">
+                <span className="a-text">━ A</span>
+                <span className="b-text">━ B</span>
+              </div>
+            </div>
+            <Curve
+              setups={state.setups}
+              profiles={profiles}
+              angles={state.angles}
+              onAngle={(angle) => update((d) => setMotionAngle(d, 0, angle))}
+              region={state.region}
+              onRegionChange={(region) =>
+                update((d) => {
+                  d.region = region;
+                })
+              }
+            />
+            <p className="chart-caption">
+              Positive values resist the indicated movement. Negative values assist it. Gaps mark positions where the model cannot give a value.
+            </p>
+          </article>
+
+        </section>
+        </div>
         {!savingEnabled && (
           <div className="notice recovery-notice" role="status">
             {savingPauseReason}
@@ -593,7 +638,7 @@ export default function App() {
             and no moment difference is calculated.
           </div>
         )}
-        <section className="movement-panel" aria-label="Movement controls">
+        <section id="exercise-movement" tabIndex={-1} className="movement-panel" aria-label="Movement controls">
           <h2 className="rep-title">Position in the rep</h2>
           <div className="movement-row">
             <button
@@ -943,36 +988,7 @@ export default function App() {
             );
           })}
         </section>
-        <section className="analysis-grid" aria-label="Results">
-          <article className="curve-card">
-            <div className="section-heading">
-              <div>
-                <h2>Resistance across the movement</h2>
-              </div>
-              <div className="legend">
-                <span className="a-text">━ A</span>
-                <span className="b-text">━ B</span>
-              </div>
-            </div>
-            <Curve
-              setups={state.setups}
-              profiles={profiles}
-              angles={state.angles}
-              onAngle={(angle) => update((d) => setMotionAngle(d, 0, angle))}
-              region={state.region}
-              onRegionChange={(region) =>
-                update((d) => {
-                  d.region = region;
-                })
-              }
-            />
-            <p className="chart-caption">
-              Positive values resist the indicated movement. Negative values assist it. Gaps mark positions where the model cannot give a value.
-            </p>
-          </article>
-
-        </section>
-        <details className="analysis-workbench" open={showAnalysis} onToggle={event => setShowAnalysis(event.currentTarget.open)}><summary><span><Icon name="search"/>Detailed analysis & comparison notes</span><span>Regions · differences · sensitivity</span></summary>{showAnalysis && <AnalysisPanel state={state} onChange={update}/>}</details>
+        <details id="comparison-details" tabIndex={-1} className="analysis-workbench" open={showAnalysis} onToggle={event => setShowAnalysis(event.currentTarget.open)}><summary><span><Icon name="search"/>Detailed analysis & comparison notes</span><span>Regions · differences · sensitivity</span></summary>{showAnalysis && <AnalysisPanel state={state} onChange={update}/>}</details>
         </section>
                 {visited.includes("compound") && <section hidden={workspace !== "compound"} aria-label="Compound movement workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><CompoundLab key={workbenchRevision.compound} profiles={profiles} selection={compoundSelection} onPickJoint={id => choosePairPreset(0, id)} /></Suspense></section>}
         {visited.includes("machines") && <section hidden={workspace !== "machines"} aria-label="Machine workspace"><Suspense fallback={<div className="workspace-loading" role="status">Opening workspace…</div>}><MachineLab key={workbenchRevision.machine} /></Suspense></section>}
