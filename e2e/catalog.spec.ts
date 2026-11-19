@@ -95,7 +95,7 @@ test('searches and favorites catalog entries and retains exercise-list resolutio
   await catalog.getByRole('checkbox',{name:'Favorites',exact:true}).check();
   await expect(catalog.locator('.catalog-item')).toHaveCount(1);
   await catalog.locator('.catalog-pick').click();
-  await expect(page.getByLabel('Exercise A')).toHaveValue('curl-bayesian');
+  await expect(page.getByRole('combobox', { name: 'Exercise A', exact: true })).toHaveValue('curl-bayesian');
   const training=page.locator('details.workspace-drawer').filter({has:page.locator('summary').filter({hasText:'Your exercise list'})});
   await openTraining(page);
   await page.getByLabel('Training exercise list').fill('Low cable curl\npull\nunknown custom exercise');
@@ -254,7 +254,7 @@ test('a focused numeric field accepts an external posture update after its draft
 
 test('retains explicit hip segment masses and combines their gravity with cable loading', async ({page}) => {
   await page.goto('/');
-  await page.getByLabel('Exercise A').selectOption('hip-extension');
+  await page.getByRole('combobox', { name: 'Exercise A', exact: true }).selectOption('hip-extension');
   await openInspector(page,'A');const settings=page.locator('.settings-card.setup-a');
   await setSetupCheck(page,'A','Include explicitly estimated segment weight',true);
   await fillField(page,'A · Thigh mass','5');

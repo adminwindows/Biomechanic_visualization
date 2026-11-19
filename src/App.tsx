@@ -735,6 +735,7 @@ export default function App() {
                 <option value="independent">independent positions</option>
               </select>
             </label>
+            {state.sync === "progress" && <p className="small-note">Equal progress does not mean equal joint angles.</p>}
           <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
             <label className="select-field">
               Movement mode

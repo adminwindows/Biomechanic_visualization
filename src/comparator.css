@@ -359,3 +359,14 @@ main.studio-main.compare-main {
   .compare-topbar-actions { gap: 6px; }
   .comparison-overview { margin: 12px 0; }
 }
+
+/* Axis labels stay readable when the plot shares a desktop row with the table. */
+.comparison-overview .curve-svg text[fill="#607383"],
+.comparison-overview .curve-svg text[fill="#425d70"] {
+  fill: #475956;
+  font-size: 12px;
+}
+.comparison-overview .curve-svg text[fill="#718492"] {
+  fill: #576861;
+  font-size: 10.5px;
+}

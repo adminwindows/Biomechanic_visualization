@@ -18,6 +18,7 @@ export async function openInspector(page: Page, side: 'A' | 'B') {
   return inspector;
 }
 export async function revealControl(control: Locator) {
+  await control.waitFor({ state: 'attached' });
   const ancestors = control.locator('xpath=ancestor::details');
   for (let i = 0; i < await ancestors.count(); i++) {
     const details = ancestors.nth(i);

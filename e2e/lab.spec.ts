@@ -78,7 +78,7 @@ test('height updates unmeasured dimensions while preserving measurements and equ
 });
 
 test('distinguishes assistive cable action from zero applied force and keeps return labels stable', async ({ page }) => {
-  await page.getByLabel('Exercise A').selectOption('inside-upright');
+  await page.getByRole('combobox', { name: 'Exercise A', exact: true }).selectOption('inside-upright');
   await fillField(page, 'Upper-arm elevation from torso', '180');
   await expect(panel(page, 'A').locator('.status')).toHaveText('Assists the pull');
   await expect(panel(page, 'A').locator('.moment')).toHaveText(/^-[0-9.]+ N·m$/);
