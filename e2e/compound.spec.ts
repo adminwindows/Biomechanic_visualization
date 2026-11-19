@@ -1,3 +1,4 @@
+import { revealControl, goWorkspace, selectCompound } from './studio-helpers';
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { openDrawer } from './studio-helpers';
@@ -21,9 +22,7 @@ async function openDetails(details: Locator) {
   if (!(await details.evaluate(node => (node as HTMLDetailsElement).open))) await details.locator(':scope > summary').click();
 }
 async function openWorkbench(page: Page) {
-  const button = page.getByRole('navigation', { name: 'Analysis workspaces' }).getByRole('button', { name: 'Compound movements', exact: true });
-  await button.click();
-  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await goWorkspace(page, 'Compound exercises');
   await expect(workbench(page)).toBeVisible();
 }
 async function noOverflow(page: Page) {
@@ -38,8 +37,8 @@ test('catalog loads a coupled path and keeps edits, copy, swap and undo attached
   await openDrawer(page, 'catalog');
   await page.getByLabel('Search exercises', { exact: true }).fill('changing elbow');
   await page.getByLabel('Catalog target', { exact: true }).selectOption('1');
-  await page.locator('#catalog .catalog-pick').filter({ hasText: 'Cable pullover · changing elbow angle' }).click();
-  await expect(page.getByRole('navigation', { name: 'Analysis workspaces' }).getByRole('button', { name: 'Compound movements', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#catalog .catalog-pick').filter({ hasText: 'Cable pullover (changing elbow bend)' }).click();
+  await expect(page.locator('#compound-lab')).toBeVisible();
   await expect(page.getByLabel('A compound exercise', { exact: true })).toHaveValue('row-seated');
   await expect(page.getByLabel('B compound exercise', { exact: true })).toHaveValue('pullover-coupled');
   const lab = workbench(page), a = lab.locator('.compound-a'), b = lab.locator('.compound-b');
@@ -58,6 +57,7 @@ test('catalog loads a coupled path and keeps edits, copy, swap and undo attached
   await lab.getByRole('button', { name: 'Copy A → B', exact: true }).click();
   await expect(page.getByLabel('B compound exercise', { exact: true })).toHaveValue('row-seated');
   await expect.poll(async () => (await state(page))!.configs[1]).toEqual(beforeA);
+  await revealControl(input(page, 'B · Force per active cable'));
   await input(page, 'B · Force per active cable').fill('170');
   await input(page, 'B · Force per active cable').press('Tab');
   await lab.getByRole('button', { name: 'Swap A / B', exact: true }).click();
@@ -76,8 +76,10 @@ test('named-library export and reimport preserve existing IDs and reproduce comp
   await page.goto('/');
   await openWorkbench(page);
   const lab = workbench(page);
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('pullover-coupled');
+  await selectCompound(page, 'pullover-coupled');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Saved coupled study');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison notes', { exact: true }).fill('Declared masses and changing elbow path; no muscle-force inference.');
   await openDetails(lab.locator('.compound-library'));
   await lab.getByRole('button', { name: 'Save named copy', exact: true }).click();
@@ -99,7 +101,8 @@ test('named-library export and reimport preserve existing IDs and reproduce comp
   expect(imported[1].snapshot).toEqual(original[0].snapshot);
   await expect(lab.locator('.compound-library-row')).toHaveCount(2);
 
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('squat-back');
+  await selectCompound(page, 'squat-back');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison notes', { exact: true }).fill('Changed since saving');
   const savedRow = lab.locator('.compound-library-row').filter({ has: page.getByText('Saved coupled study', { exact: true }) });
   await savedRow.getByRole('button', { name: 'Load', exact: true }).click();
@@ -122,7 +125,7 @@ test('unknown machine mechanisms have no fabricated profile or joint moments and
   await page.goto('/');
   await openWorkbench(page);
   const lab = workbench(page), a = lab.locator('.compound-a');
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('press-machine');
+  await selectCompound(page, 'press-machine');
   await expect(a.locator('.compound-value')).toHaveText('Unavailable');
   await expect(a.locator('.compound-results')).toContainText('GEOMETRIC ILLUSTRATION');
   await expect(page.getByLabel('A compound resistance', { exact: true })).toBeDisabled();
@@ -144,20 +147,24 @@ test('unknown machine mechanisms have no fabricated profile or joint moments and
 test('exercise drafts survive switching and reload, and matching movement curves share a quantitative scale', async ({ page }) => {
   await page.goto('/'); await openWorkbench(page);
   const lab = workbench(page), a = lab.locator('.compound-a'), b = lab.locator('.compound-b');
+  await revealControl(input(page, 'A · Force per active cable'));
   await input(page, 'A · Force per active cable').fill('175');
   await input(page, 'A · Movement progress').fill('70');
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('bench-barbell');
+  await selectCompound(page, 'bench-barbell');
+  await revealControl(input(page, 'A · External load · total'));
   await input(page, 'A · External load · total').fill('63');
   await page.reload(); await openWorkbench(page);
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('row-seated');
+  await selectCompound(page, 'row-seated');
   await expect(input(page, 'A · Force per active cable')).toHaveValue('175');
   await expect(input(page, 'A · Movement progress')).toHaveValue('70');
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('bench-barbell');
+  await selectCompound(page, 'bench-barbell');
   await expect(input(page, 'A · External load · total')).toHaveValue('63');
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('row-seated');
+  await selectCompound(page, 'row-seated');
   await a.getByRole('checkbox', { name: 'Include declared body-segment weights', exact: true }).uncheck();
+  await revealControl(input(page, 'A · Force per active cable'));
   await input(page, 'A · Force per active cable').fill('100');
   await lab.getByRole('button', { name: 'Copy A → B', exact: true }).click();
+  await revealControl(input(page, 'B · Force per active cable'));
   await input(page, 'B · Force per active cable').fill('200');
   const chartA=a.locator('.compound-curve'), chartB=b.locator('.compound-curve');
   await expect(chartA).toHaveAttribute('data-shared-scale', 'true');
@@ -169,6 +176,7 @@ test('exercise drafts survive switching and reload, and matching movement curves
 
 test('workspace export refuses stale compound state after a save failure and retries the latest live edits', async ({ page }) => {
   await page.goto('/'); await openWorkbench(page);
+  await revealControl(input(page, 'A · Force per active cable'));
   await input(page, 'A · Force per active cable').fill('120');
   await input(page, 'A · Force per active cable').press('Tab');
   await expect.poll(async () => (await state(page))?.configs[0].tension).toBe(120);
@@ -180,6 +188,7 @@ test('workspace export refuses stale compound state after a save failure and ret
       return original.call(this, name, value);
     };
   }, COMPOUND_KEY);
+  await revealControl(input(page, 'A · Force per active cable'));
   await input(page, 'A · Force per active cable').fill('175');
   await input(page, 'A · Force per active cable').press('Tab');
   expect((await state(page))!.configs[0].tension).toBe(120);

@@ -1,3 +1,4 @@
+import { revealControl, setComparisonName, readComparisonName, openTools } from './studio-helpers';
 import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
@@ -16,7 +17,7 @@ async function openGroup(page: Page, side: 'A' | 'B', title: string) { await ope
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Compare the mechanics.');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Compare exercises');
 });
 
 test('renders comparable scenes, responsive controls and a readable curve without runtime errors', async ({ page }) => {
@@ -44,12 +45,15 @@ test('renders comparable scenes, responsive controls and a readable curve withou
 test('keeps setup edits independent and implements angle, progress and independent synchronization', async ({ page }) => {
   await fillField(page, 'A · Pulley height', '190');
   await expect(input(page, 'B · Pulley height')).toHaveValue('135');
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Synchronization mode').selectOption('independent');
   await fillField(page, 'A · Upper-arm elevation from torso', '120');
   await fillField(page, 'B · Upper-arm elevation from torso', '170');
   await expect(input(page, 'A · Upper-arm elevation from torso')).toHaveValue('120');
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Synchronization mode').selectOption('angle');
   await expect.poll(async () => (await stateInBrowser(page))?.angles).toEqual([120, 120]);
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Synchronization mode').selectOption('progress');
   await fillField(page, 'Upper-arm elevation from torso', '115');
   await expect.poll(async () => (await stateInBrowser(page))?.angles).toEqual([115, 135]);
@@ -74,7 +78,7 @@ test('height updates unmeasured dimensions while preserving measurements and equ
 });
 
 test('distinguishes assistive cable action from zero applied force and keeps return labels stable', async ({ page }) => {
-  await page.getByLabel('Configuration A preset').selectOption('inside-upright');
+  await page.getByLabel('Exercise A').selectOption('inside-upright');
   await fillField(page, 'Upper-arm elevation from torso', '180');
   await expect(panel(page, 'A').locator('.status')).toHaveText('Assists the pull');
   await expect(panel(page, 'A').locator('.moment')).toHaveText(/^-[0-9.]+ N·m$/);
@@ -103,17 +107,19 @@ test('copies, swaps and undoes full setups with their corresponding results', as
 });
 
 test('saves, reloads and reproduces an exported comparison in empty browser storage', async ({ page }) => {
-  await page.getByLabel('Comparison name').fill('Overhead setup trial');
+  await setComparisonName(page, 'Overhead setup trial');
   await fillField(page, 'A · Pulley height', '205');
   await setLock(page, 'Same force per attachment', true);
   await fillField(page, 'A · Force per cable', '130');
   await expect.poll(async () => (await stateInBrowser(page))?.setups[1].tension).toBe(130);
   const expected = await stateInBrowser(page);
   await page.reload();
-  await expect(page.getByLabel('Comparison name')).toHaveValue('Overhead setup trial');
+  await expect(await readComparisonName(page)).toHaveValue('Overhead setup trial');
+  await closeDialog(page);
   await expect(input(page, 'A · Pulley height')).toHaveValue('205');
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await (await openTools(page)).getByRole('button', { name: 'Export comparison', exact: true }).click();
+  await closeDialog(page);
   const download = await downloadPromise;
   const snapshot = JSON.parse(await readFile((await download.path())!, 'utf8'));
   expect(snapshot).toEqual(expected);
@@ -153,7 +159,7 @@ test('suppresses direct cable moments after spatial backrest contact', async ({ 
   await expect(panel(page, 'B').locator('.moment')).toHaveText(/—/);
   await page.getByRole('button', { name: 'Top view', exact: true }).click();
   await expect(panel(page, 'B').locator('.scene-top')).toBeVisible();
-  await expect(page.locator('.insight-card h2')).toBeVisible();
+  await expect(panel(page, 'B').locator('.status')).toContainText('Backrest contact');
 });
 
 test('accepts natural sequential numeric typing including negative positions', async ({ page }) => {

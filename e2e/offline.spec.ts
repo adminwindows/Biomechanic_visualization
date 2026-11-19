@@ -1,3 +1,4 @@
+import { goWorkspace, setComparisonName, readComparisonName, closeDialog } from './studio-helpers';
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -75,12 +76,7 @@ test("reloads and edits the saved application with the network disconnected", as
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await ready(page);
-  const name = page.getByRole("textbox", {
-    name: "Comparison name",
-    exact: true,
-  });
-  await name.fill("My offline comparison");
-  await name.blur();
+  await setComparisonName(page, 'My offline comparison');
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -96,9 +92,8 @@ test("reloads and edits the saved application with the network disconnected", as
   await expect(page.getByTestId("offline-status")).toHaveText(
     "Working offline",
   );
-  await expect(name).toHaveValue("My offline comparison");
-  await name.fill("Edited without a connection");
-  await name.blur();
+  await expect(await readComparisonName(page)).toHaveValue("My offline comparison");
+  await setComparisonName(page, "Edited without a connection");
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -110,24 +105,26 @@ test("reloads and edits the saved application with the network disconnected", as
     )
     .toBe("Edited without a connection");
   await page.reload();
-  await expect(name).toHaveValue("Edited without a connection");
+  await expect(await readComparisonName(page)).toHaveValue("Edited without a connection");
+  await closeDialog(page);
   const examples = await openDrawer(page, 'example-comparisons');
   await examples.getByRole('button', {name: /^Lateral raise: cable versus dumbbell/}).click();
-  await expect(page.getByLabel('Configuration A preset', {exact: true})).toHaveValue('raise-cable');
-  await expect(page.getByLabel('Configuration B preset', {exact: true})).toHaveValue('raise-dumbbell');
+  await expect(page.getByLabel('Exercise A', {exact: true})).toHaveValue('raise-cable');
+  await expect(page.getByLabel('Exercise B', {exact: true})).toHaveValue('raise-dumbbell');
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
-  await expect(name).toHaveValue("Edited without a connection");
+  await expect(await readComparisonName(page)).toHaveValue("Edited without a connection");
+  await closeDialog(page);
   // Each workspace chunk must open for the first time from the prepared cache.
   const workspaces = [
-    ['Compound movements', 'Movement studies'],
-    ['Machines & measured profiles', 'Machine profiles'],
-    ['Find a setup & research', 'Explore the possibilities'],
-    ['Study planner', 'Start with a question'],
-    ['Measure & calibrate', 'Measure before you infer'],
-    ['Joint & exercise comparison', 'Compare the mechanics.'],
+    ['Compound exercises', 'Compare exercises'],
+    ['Machine resistance', 'Machine resistance'],
+    ['Explore setup changes', 'Explore setup changes'],
+    ['Try a setup change', 'Try a setup change'],
+    ['Measurements', 'Measurements'],
+    ['Compare exercises', 'Compare exercises'],
   ];
   for (const [label, title] of workspaces) {
-    await page.getByRole('navigation', { name: 'Analysis workspaces' }).getByRole('button', { name: label, exact: true }).click();
+    await goWorkspace(page, label);
     await expect(page.getByRole('heading', { name: title, exact: true, level: 1 })).toBeVisible();
     await expect(page.getByText('Opening workspace…', { exact: true })).toHaveCount(0);
   }
@@ -198,13 +195,10 @@ test("waits for an explicit update and saves the latest in-progress comparison b
     await expect(page.locator('meta[name="biomechanics-build"]')).toHaveAttribute('content', initialVersion);
     await page.getByRole('button', { name: 'Back up previous data & enable saving', exact: true }).click();
     expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('exercise-biomechanics-lab.recovery.') && localStorage.getItem(key) === '{unreadable original'))).toBe(true);
-    const name = page.getByRole("textbox", {
-      name: "Comparison name",
-      exact: true,
-    });
-    await name.fill("Latest edit kept across an update");
+    await setComparisonName(page, 'Latest edit kept across an update');
     await Promise.all([page.waitForEvent("load"), update.click()]);
-    await expect(name).toHaveValue("Latest edit kept across an update");
+    await expect(await readComparisonName(page)).toHaveValue("Latest edit kept across an update");
+    await closeDialog(page);
     await expect(
       page.locator('meta[name="biomechanics-build"]'),
     ).toHaveAttribute("content", updatedVersion);

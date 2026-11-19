@@ -1,3 +1,4 @@
+import { revealControl, selectCompound, chooseCatalogPreset } from './studio-helpers';
 import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { STORAGE_KEY, createInitialState, type LabState } from '../src/state';
@@ -5,7 +6,7 @@ import { RESEARCH_KEY } from '../src/researchNotebook';
 const saved = (page: Page) => page.evaluate(key => JSON.parse(localStorage.getItem(key)!) as LabState, STORAGE_KEY);
 async function openExplorer(page: Page) {
   await page.goto('/');
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   if (!(await page.locator('#design-explorer').evaluate(node => (node as HTMLDetailsElement).open))) await page.locator('#design-explorer > summary').click();
   await page.getByLabel('Map resolution', { exact: true }).selectOption('5');
   await page.getByRole('checkbox', { name: 'Reject assistance detected throughout original ROM', exact: true }).uncheck();
@@ -57,7 +58,7 @@ test('robust map rejects unavailable uncertainty scenarios and exposes prescribe
 
 test('research notes retain a comparison snapshot and keep the hypothesis separate from findings', async ({ page }) => {
   await page.goto('/');
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   const notebook = page.locator('.research-notebook');
   await notebook.locator('summary').first().click();
   await page.getByLabel('Research note title', { exact: true }).fill('Pulley placement hypothesis');
@@ -66,7 +67,7 @@ test('research notes retain a comparison snapshot and keep the hypothesis separa
   await notebook.getByRole('button', { name: /Save.*snapshot/i }).click();
   await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? '{"entries":[]}').entries.length, RESEARCH_KEY)).toBe(1);
   await page.reload();
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   await notebook.locator('summary').first().click();
   await expect(notebook).toContainText('Pulley placement hypothesis');
   await expect(notebook).toContainText('Next step: measure outlet height.');
@@ -89,7 +90,7 @@ test('translation analysis uses force, centimetres and metre-based work without 
   const mean = analysis.locator('table').first().locator('tbody tr').filter({ hasText: 'Mean resisting force' });
   await expect(mean.locator('td').first()).toHaveText('196.2 N');
   await expect(analysis.locator('table').first().locator('tbody tr').filter({ hasText: 'External-load work' }).locator('td').first()).toHaveText('-23.5 J');
-  await page.getByLabel('Configuration B preset', { exact: true }).selectOption('classic-far');
+  await chooseCatalogPreset(page,'B','classic-far');
   const mixed = analysis.locator('table').first().locator('tbody tr').filter({ hasText: 'Mean resisting load' });
   await expect(mixed.locator('td').first()).toHaveText('196.2 N');
   await expect(mixed.locator('td').nth(1)).toContainText('N·m');
@@ -98,7 +99,7 @@ test('translation analysis uses force, centimetres and metre-based work without 
 
 test('unsaved research drafts block workspace flushing until saved or explicitly discarded', async ({ page }) => {
   await page.goto('/');
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   const notebook = page.locator('.research-notebook');
   await notebook.locator('summary').first().click();
   const flushErrors = () => page.evaluate(() => {
@@ -109,13 +110,13 @@ test('unsaved research drafts block workspace flushing until saved or explicitly
   expect(await flushErrors()).toEqual([]);
   await page.getByLabel('Research note title', { exact: true }).fill('Keep this unfinished question');
   await page.getByLabel('Research finding and limitations', { exact: true }).fill('Awaiting the equipment measurement.');
-  await goWorkspace(page, 'Joint & exercise comparison');
+  await goWorkspace(page, 'Compare exercises');
   await openDrawer(page, 'workspace-backup');
   await page.getByRole('button', { name: 'Export workspace', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Research notebook has an unsaved note');
   expect((await flushErrors()).join(' ')).toContain('save it or discard the draft');
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? '{"entries":[]}').entries.length, RESEARCH_KEY)).toBe(0);
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   await expect(page.getByLabel('Research note title', { exact: true })).toHaveValue('Keep this unfinished question');
   await notebook.getByRole('button', { name: 'Save note & comparison snapshot', exact: true }).click();
   expect(await flushErrors()).toEqual([]);
@@ -132,12 +133,13 @@ test('unsaved research drafts block workspace flushing until saved or explicitly
 
 test('compound research snapshots restore their captured path and body instead of the current main profile', async ({ page }) => {
   await page.goto('/');
-  await goWorkspace(page, 'Compound movements');
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('pullover-coupled');
+  await goWorkspace(page, 'Compound exercises');
+  await selectCompound(page, 'pullover-coupled');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Recorded coupled path');
   const force = page.getByRole('spinbutton', { name: 'A · Force per active cable value', exact: true });
   await force.fill('143'); await force.blur();
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   const notebook = page.locator('.research-notebook'); await notebook.locator('summary').first().click();
   await page.getByLabel('Research snapshot source', { exact: true }).selectOption('compound');
   await page.getByLabel('Research note title', { exact: true }).fill('Coupled path research');
@@ -146,12 +148,13 @@ test('compound research snapshots restore their captured path and body instead o
   expect(note.attachment.kind).toBe('compound');
   expect(note.attachment.snapshot.configs[0].preset).toBe('pullover-coupled');
   expect(note.attachment.snapshot.configs[0].tension).toBe(143);
-  await goWorkspace(page, 'Compound movements');
-  await page.getByLabel('A compound exercise', { exact: true }).selectOption('squat-back');
+  await goWorkspace(page, 'Compound exercises');
+  await selectCompound(page, 'squat-back');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Different current work');
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   await notebook.getByRole('button', { name: 'Restore compound comparison', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Compound movements', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#compound-lab')).toBeVisible();
   await expect(page.getByLabel('A compound exercise', { exact: true })).toHaveValue('pullover-coupled');
   await expect(force).toHaveValue('143');
   const restored = await page.evaluate(() => JSON.parse(localStorage.getItem('biomechanics.compound-workbench.v1')!));
@@ -163,14 +166,14 @@ test('compound research snapshots restore their captured path and body instead o
 
 test('machine research snapshots retain data branches and respect unapplied curve draft protection', async ({ page }) => {
   await page.goto('/');
-  await goWorkspace(page, 'Machines & measured profiles');
+  await goWorkspace(page, 'Machine resistance');
   await page.getByLabel('Machine A mechanism', { exact: true }).selectOption('curve');
   await page.getByLabel('Machine A name', { exact: true }).fill('User-entered calibration example');
   await page.locator('.machine-a').getByText('Coordinate, provenance & uncertainty', { exact: true }).click();
   await page.getByLabel('Machine A evidence type', { exact: true }).selectOption('theoretical');
   const samples = page.getByLabel('Machine A lifting samples', { exact: true });
   await samples.fill('10, 20, 1\n55, 36, 2\n100, 27, 1');
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   const notebook = page.locator('.research-notebook'); await notebook.locator('summary').first().click();
   await page.getByLabel('Research snapshot source', { exact: true }).selectOption('machine');
   await page.getByLabel('Research note title', { exact: true }).fill('Calibration research');
@@ -178,19 +181,19 @@ test('machine research snapshots retain data branches and respect unapplied curv
   await save.click();
   await expect(notebook.getByRole('status')).toContainText('Apply or discard Machine A lifting samples');
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? '{"entries":[]}').entries.length, RESEARCH_KEY)).toBe(0);
-  await goWorkspace(page, 'Machines & measured profiles');
+  await goWorkspace(page, 'Machine resistance');
   await samples.locator('..').locator('..').getByRole('button', { name: 'Apply curve data', exact: true }).click();
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   await save.click();
   await expect(notebook.getByRole('status')).toContainText('Research note saved with a machine comparison snapshot');
   const note = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).entries[0], RESEARCH_KEY);
   expect(note.attachment.kind).toBe('machine');
   expect(note.attachment.snapshot.profiles[0].curve.lifting[1]).toEqual({ angle: 55, value: 36, uncertainty: 2 });
-  await goWorkspace(page, 'Machines & measured profiles');
+  await goWorkspace(page, 'Machine resistance');
   await page.getByLabel('Machine A mechanism', { exact: true }).selectOption('lever');
-  await goWorkspace(page, 'Find a setup & research');
+  await goWorkspace(page, 'Explore setup changes');
   await notebook.getByRole('button', { name: 'Restore machine comparison', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Machines & measured profiles', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: 'Machine resistance', level: 1 })).toBeVisible();
   await expect(page.getByLabel('Machine A mechanism', { exact: true })).toHaveValue('curve');
   await expect(samples).toHaveValue(/55, 36, 2/);
   await expect(page.getByLabel('Machine A name', { exact: true })).toHaveValue('User-entered calibration example');

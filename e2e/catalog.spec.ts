@@ -1,3 +1,4 @@
+import { chooseCatalogPreset } from './studio-helpers';
 import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
@@ -12,7 +13,7 @@ const settings = (page: Page, side:'A'|'B') => page.locator(`.settings-card.setu
 const savedState = (page: Page) => page.evaluate(key => {try {return JSON.parse(localStorage.getItem(key) ?? 'null') as LabState | null;}catch{return null;}}, STORAGE_KEY);
 async function openDetails(page:Page,side:'A'|'B',title:string){await openSettingsGroup(page,side,title);}
 async function drawer(page:Page,id:string){return openDrawer(page,id);}
-async function choose(page:Page,side:'A'|'B',id:string){await closeDialog(page);await closeInspector(page);await page.getByLabel(`Configuration ${side} preset`,{exact:true}).selectOption(id);}
+async function choose(page:Page,side:'A'|'B',id:string){await closeDialog(page);await closeInspector(page);await page.getByLabel(`Exercise ${side}`,{exact:true}).selectOption(id);}
 
 test.beforeEach(async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{level:1})).toBeVisible();});
 
@@ -21,21 +22,21 @@ test('catalog aliases and setup filters distinguish modeled exercises from machi
   const items = catalog.locator('.catalog-item');
   await expect(items).toHaveCount(allExerciseEntries.length);
   await catalog.getByLabel('Search exercises').fill('lat prayer');
-  await expect(items.filter({hasText: 'Horizontal torso'}).first()).toBeVisible();
+  await expect(items.filter({hasText: 'Bent-over cable pullover'}).first()).toBeVisible();
   await catalog.getByRole('button', {name: 'Clear filters'}).click();
   await catalog.getByLabel('Catalog equipment', {exact: true}).selectOption('Dumbbell');
-  await expect(items.filter({hasText: 'Dumbbell lateral raise'}).first()).toBeVisible();
+  await expect(items.filter({hasText: /dumbbell lateral raise/i}).first()).toBeVisible();
   await catalog.getByLabel('Catalog muscle group').selectOption('Deltoids');
   await catalog.getByLabel('Catalog main joint').selectOption('Shoulder');
   await catalog.getByLabel('Catalog posture').selectOption('Standing');
   await catalog.getByLabel('Catalog sides').selectOption('Unilateral');
-  await expect(items.filter({hasText: 'Dumbbell lateral raise'}).first()).toBeVisible();
+  await expect(items.filter({hasText: /dumbbell lateral raise/i}).first()).toBeVisible();
   await catalog.getByLabel('Catalog available model').selectOption('Geometry only');
   await expect(items).toHaveCount(0);
   await expect(catalog.getByText('No exercises match these filters.')).toBeVisible();
   await catalog.getByRole('button', {name: 'Clear filters'}).click();
   await catalog.getByLabel('Catalog available model').selectOption('Geometry only');
-  const unknown = items.filter({hasText: 'Pullover machine · mechanism unknown'});
+  const unknown = items.filter({hasText: 'Pullover machine'});
   await expect(unknown).toHaveCount(1);
   await unknown.locator('.catalog-pick').click();
   await expect(setupCard(page, 'A').locator('.status')).toContainText('Resistance not calculated');
@@ -78,7 +79,7 @@ test('reference scenarios use distinct geometry and the unknown machine has no n
     await expect.poll(async()=> (await savedState(page))?.setups[0].preset).toBe(id);
   }
   expect(geometrySignatures.size).toBe(12);
-  await choose(page,'A','machine-unknown');
+  await chooseCatalogPreset(page,'A','machine-unknown');
   await expect(setupCard(page,'A').locator('.status')).toContainText('Resistance not calculated');
   await expect(setupCard(page,'A').locator('.moment')).toContainText('—');
   expect((await page.locator('[data-curve=A]').getAttribute('d'))?.trim()).toBe('');
@@ -89,12 +90,12 @@ test('searches and favorites catalog entries and retains exercise-list resolutio
   const catalog=await drawer(page,'catalog');
   await page.getByLabel('Search exercises').fill('Bayesian');
   await expect(catalog.locator('.catalog-item')).toHaveCount(1);
-  await page.getByRole('button',{name:'Favorite Bayesian curl · arm behind torso',exact:true}).click();
+  await page.getByRole('button',{name:'Favorite Bayesian cable curl',exact:true}).click();
   await page.reload();await drawer(page,'catalog');
   await catalog.getByRole('checkbox',{name:'Favorites',exact:true}).check();
   await expect(catalog.locator('.catalog-item')).toHaveCount(1);
   await catalog.locator('.catalog-pick').click();
-  await expect(page.getByLabel('Configuration A preset')).toHaveValue('curl-bayesian');
+  await expect(page.getByLabel('Exercise A')).toHaveValue('curl-bayesian');
   const training=page.locator('details.workspace-drawer').filter({has:page.locator('summary').filter({hasText:'Your exercise list'})});
   await openTraining(page);
   await page.getByLabel('Training exercise list').fill('Low cable curl\npull\nunknown custom exercise');
@@ -205,7 +206,7 @@ test('drags side-view equipment and keeps keyboard alternatives and shared zoom 
 
 test('gates incompatible curves and compares only matching complete selected regions',async({page})=>{
   await expect(page.locator('.curve-svg')).toHaveCount(1);
-  await choose(page,'B','curl-low');
+  await chooseCatalogPreset(page,'B','curl-low');
   await expect(page.locator('[data-comparison=incompatible]')).toBeVisible();
   await expect(page.locator('.curve-svg')).toHaveCount(2);
   await expect(page.getByLabel('Synchronization mode').locator('option[value=angle]')).toHaveJSProperty('disabled',true);
@@ -252,7 +253,7 @@ test('a focused numeric field accepts an external posture update after its draft
 
 test('retains explicit hip segment masses and combines their gravity with cable loading', async ({page}) => {
   await page.goto('/');
-  await page.getByLabel('Configuration A preset').selectOption('hip-extension');
+  await page.getByLabel('Exercise A').selectOption('hip-extension');
   await openInspector(page,'A');const settings=page.locator('.settings-card.setup-a');
   await setSetupCheck(page,'A','Include explicitly estimated segment weight',true);
   await fillField(page,'A · Thigh mass','5');

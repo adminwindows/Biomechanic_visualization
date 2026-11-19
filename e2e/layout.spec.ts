@@ -25,9 +25,9 @@ test('phone landscape keeps both scenes, curves and keyboard controls usable wit
 test('phone landscape supports catalog selection and accessible region tables',async({page})=>{
   await page.goto('/');await openDrawer(page,'catalog');
   await page.getByLabel('Search exercises',{exact:true}).fill('lateral raise');
-  await expect(page.locator('#catalog .catalog-pick').filter({hasText:'Unilateral cable lateral raise'})).toBeVisible();
-  await page.locator('#catalog .catalog-pick').filter({hasText:'Unilateral cable lateral raise'}).tap();
-  await expect(page.getByLabel('Configuration A preset',{exact:true})).toHaveValue('raise-cable');
+  await expect(page.locator('#catalog .catalog-pick').filter({hasText:'Single-arm cable lateral raise'})).toBeVisible();
+  await page.locator('#catalog .catalog-pick').filter({hasText:'Single-arm cable lateral raise'}).tap();
+  await expect(page.getByLabel('Exercise A',{exact:true})).toHaveValue('raise-cable');
   await expect(page.locator('[data-comparison=incompatible]')).toBeVisible();
   await expect(page.locator('.curve-svg')).toHaveCount(2);
   await openAnalysis(page);const results=page.getByRole('region',{name:'Comparison analysis',exact:true}).getByRole('region',{name:'Scrollable results table'}).first();

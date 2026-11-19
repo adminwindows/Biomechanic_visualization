@@ -1,10 +1,11 @@
+import { goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { CALIBRATION_KEY, type CalibrationNotebook } from '../src/calibrationGuide';
 import { STORAGE_KEY, type LabState } from '../src/state';
 
 async function openGuide(page: Page) {
-  await page.getByRole('button', { name: 'Measure & calibrate', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Measure before you infer', exact: true })).toBeVisible();
+  await goWorkspace(page, 'Measurements');
+  await expect(page.getByRole('heading', { name: 'Measurements', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Measurement and calibration guide', exact: true })).toBeVisible();
 }
 async function provenance(page: Page, name: string) {

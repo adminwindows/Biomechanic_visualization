@@ -1,3 +1,4 @@
+import { revealControl, chooseCatalogPreset } from './studio-helpers';
 import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { BAR_RADIUS, RAD, defaultProfile, presets } from '../src/engine';
@@ -26,6 +27,7 @@ test('usable mode keeps edits and playback inside a selected clear portion and p
   await loadFixture(page);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Movement mode', { exact: true }).selectOption('usable');
   const portions = page.getByLabel('Shared clear portion', { exact: true });
   await expect(portions.locator('option')).toHaveCount(2);
@@ -45,6 +47,7 @@ test('usable mode keeps edits and playback inside a selected clear portion and p
   await expect(page.getByLabel('Movement mode', { exact: true })).toHaveValue('usable');
   await expect(portions).toHaveValue('1');
   expect((await saved(page)).setups.map(setup => setup.range)).toEqual([[195.5, 197], [195.5, 197]]);
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Movement mode', { exact: true }).selectOption('explore');
   await angle.fill('196.14');
   await expect(page.locator('.setup-a .status')).toContainText('Backrest contact');
@@ -54,16 +57,20 @@ test('usable mode keeps edits and playback inside a selected clear portion and p
 
 test('usable mode blocks unsupported synchronized geometry and permits independent modeled motion', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Configuration B preset', { exact: true }).selectOption('machine-unknown');
+  await chooseCatalogPreset(page,'B','machine-unknown');
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Synchronization mode', { exact: true }).selectOption('progress');
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Movement mode', { exact: true }).selectOption('usable');
   await expect(page.getByRole('button', { name: 'Play animation', exact: true })).toBeDisabled();
   await expect(page.getByText('Cable routing or machine motion is not modeled for this configuration.', { exact: false })).toBeVisible();
   await expect(page.getByRole('spinbutton', { name: 'Shared movement progress value', exact: true })).toBeDisabled();
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Synchronization mode', { exact: true }).selectOption('independent');
   await expect(page.getByLabel('A clear portion', { exact: true })).toBeEnabled();
   await expect(page.getByLabel('B clear portion', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Play animation', exact: true })).toBeEnabled();
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Movement mode', { exact: true }).selectOption('explore');
   await expect(page.locator('.movement-sliders fieldset').nth(1)).toBeEnabled();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

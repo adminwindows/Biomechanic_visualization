@@ -1,8 +1,9 @@
+import { goWorkspace, openDialog } from './studio-helpers';
 import { expect, test } from '@playwright/test';
 import { createInitialState } from '../src/state';
 
 const key = 'exercise-biomechanics-lab.comparison.v1';
-test.beforeEach(async ({ page }) => { await page.goto('/#toString'); await expect(page.getByRole('heading', { name: 'Compare the mechanics.', exact: true })).toBeVisible(); });
+test.beforeEach(async ({ page }) => { await page.goto('/#toString'); await expect(page.getByRole('heading', { name: 'Compare exercises', exact: true })).toBeVisible(); });
 
 test('command search routes a chosen exercise to B and restores that workspace after reload', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
@@ -12,11 +13,11 @@ test('command search routes a chosen exercise to B and restores that workspace a
   await dialog.getByLabel('Command exercise target').selectOption('1');
   const query = dialog.getByRole('combobox', { name: 'Search tools and exercises' });
   await query.fill('barbell row'); await query.press('Enter');
-  await expect(page.getByRole('button', { name: 'Compound movements', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#compound-lab')).toBeVisible();
   await expect(page.getByLabel('B compound exercise', { exact: true })).toHaveValue('row-barbell');
   await expect.poll(async () => page.evaluate(() => localStorage.getItem('biomechanics.compound-workbench.v1'))).not.toBeNull();
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Compound movements', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#compound-lab')).toBeVisible();
   await expect(page.getByLabel('B compound exercise', { exact: true })).toHaveValue('row-barbell');
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -39,19 +40,47 @@ test('inspector edits remain independent, switch sides deliberately, and return 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('study starters and library remain reachable from keyboard command search on narrow screens', async ({ page }) => {
-  await page.getByRole('button', { name: 'New study', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Start a study', exact: true });
+test('examples and library are reachable from Tools and keyboard search on narrow screens', async ({ page }) => {
+  await openDialog(page, 'Example comparisons');
+  const dialog = page.getByRole('dialog', { name: 'Example comparisons', exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Lateral raise: cable versus dumbbell', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Close Start a study' }).click();
+  await dialog.getByRole('button', { name: 'Close Example comparisons' }).click();
   await page.keyboard.press('Control+k');
   const search = page.getByRole('combobox', { name: 'Search tools and exercises' });
   await search.fill('Library & backup'); await search.press('Enter');
   const library = page.getByRole('dialog', { name: 'Library & backup', exact: true });
   await expect(library).toBeVisible();
   await library.getByRole('button', { name: 'Close Library & backup' }).click();
-  await page.getByRole('button', { name: 'Find a setup & research', exact: true }).click();
+  await goWorkspace(page, 'Explore setup changes');
   await expect(page.getByLabel('Search objective', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('chooses two compatible exercises without a setup or save step', async ({ page }) => {
+  const a = page.getByRole('combobox', { name: 'Exercise A', exact: true });
+  const b = page.getByRole('combobox', { name: 'Exercise B', exact: true });
+  await expect(a).toBeVisible();
+  await expect(b).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Comparison name' })).toBeHidden();
+  await a.selectOption('raise-cable');
+  await page.getByRole('button', { name: 'Search exercise B', exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Find exercise B', exact: true }).fill('dumbbell lateral raise');
+  await page.getByRole('button', { name: 'Leaning dumbbell lateral raise', exact: true }).click();
+  await expect(b).toHaveValue('raise-dumbbell');
+  await expect(b.locator('option[value="curl-low"]')).toHaveCount(0);
+  await expect(page.locator('.curve-svg')).toHaveCount(1);
+  await expect(page.locator('.setup-a .moment')).toContainText('N·m');
+  await expect(page.locator('.setup-b .moment')).toContainText('N·m');
+  await b.selectOption('raise-cable');
+  await expect(b).toHaveValue(await a.inputValue());
+  await a.selectOption('compound:row-seated');
+  await b.selectOption('compound:row-standing');
+  await expect(b.locator('option[value="compound:bench-barbell"]')).toHaveCount(0);
+  await expect(page.locator('.compound-a .compound-value')).toBeVisible();
+  await expect(page.locator('.compound-b .compound-value')).toBeVisible();
+  await a.selectOption('curl-low');
+  await expect(a).toHaveValue('curl-low');
+  await expect(b).not.toHaveValue(/compound:/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

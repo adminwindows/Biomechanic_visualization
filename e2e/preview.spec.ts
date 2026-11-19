@@ -1,3 +1,4 @@
+import { setComparisonName, readComparisonName } from './studio-helpers';
 import { test, expect, type Page } from "@playwright/test";
 import { openDrawer, closeDialog, goWorkspace } from "./studio-helpers";
 
@@ -43,15 +44,15 @@ test("serves a complete production preview, including first-use workspaces witho
   await expect(page.getByTestId("offline-status")).toHaveText("Working offline");
   const offlineExamples = await openDrawer(page, "example-comparisons");
   await offlineExamples.getByRole("button", { name: /^Lateral raise: cable versus dumbbell/ }).click();
-  await expect(page.getByLabel("Configuration A preset", { exact: true })).toHaveValue("raise-cable");
-  await expect(page.getByLabel("Configuration B preset", { exact: true })).toHaveValue("raise-dumbbell");
+  await expect(page.getByLabel("Exercise A", { exact: true })).toHaveValue("raise-cable");
+  await expect(page.getByLabel("Exercise B", { exact: true })).toHaveValue("raise-dumbbell");
   for (const [label, title] of [
-    ["Compound movements", "Movement studies"],
-    ["Machines & measured profiles", "Machine profiles"],
-    ["Find a setup & research", "Explore the possibilities"],
-    ["Study planner", "Start with a question"],
-    ["Measure & calibrate", "Measure before you infer"],
-    ["Joint & exercise comparison", "Compare the mechanics."],
+    ["Compound exercises", "Compare exercises"],
+    ["Machine resistance", "Machine resistance"],
+    ["Explore setup changes", "Explore setup changes"],
+    ["Try a setup change", "Try a setup change"],
+    ["Measurements", "Measurements"],
+    ["Compare exercises", "Compare exercises"],
   ]) {
     await goWorkspace(page, label);
     await expect(page.getByRole("heading", { name: title, exact: true, level: 1 })).toBeVisible();
@@ -64,17 +65,14 @@ test("keeps previews and the root app independent on the same origin", async ({ 
   const primaryURL = new URL(baseURL!);
   const siblingURL = new URL(siblingPath, primaryURL);
   const rootURL = new URL("/", primaryURL);
-  const comparison = (tab: Page) => tab.getByRole("textbox", { name: "Comparison name", exact: true });
   await ready(page, primaryURL.href);
-  await comparison(page).fill("Primary PR comparison");
-  await comparison(page).blur();
+  await setComparisonName(page, "Primary PR comparison");
   // Wait for debounced persistence before opening a competing deployment.
   await expect.poll(() => page.evaluate(() => Object.values(localStorage).some(value => value.includes('"name":"Primary PR comparison"')))).toBe(true);
   const sibling = await context.newPage();
   await ready(sibling, siblingURL.href);
-  await expect(comparison(sibling)).not.toHaveValue("Primary PR comparison");
-  await comparison(sibling).fill("Sibling PR comparison");
-  await comparison(sibling).blur();
+  await expect(await readComparisonName(sibling)).not.toHaveValue("Primary PR comparison");
+  await setComparisonName(sibling, "Sibling PR comparison");
   await expect.poll(() => sibling.evaluate(() => Object.values(localStorage).some(value => value.includes('"name":"Sibling PR comparison"')))).toBe(true);
   const before = await page.evaluate(() => caches.keys());
   expect(before).toHaveLength(2);
@@ -84,8 +82,8 @@ test("keeps previews and the root app independent on the same origin", async ({ 
   // Activating a root worker must not remove nested caches or intercept their shell.
   const root = await context.newPage();
   await ready(root, rootURL.href);
-  await expect(comparison(root)).not.toHaveValue("Primary PR comparison");
-  await expect(comparison(root)).not.toHaveValue("Sibling PR comparison");
+  await expect(await readComparisonName(root)).not.toHaveValue("Primary PR comparison");
+  await expect(await readComparisonName(root)).not.toHaveValue("Sibling PR comparison");
   const after = await root.evaluate(() => caches.keys());
   expect(after).toEqual(expect.arrayContaining(before));
   expect(after).toHaveLength(3);
@@ -102,13 +100,16 @@ test("keeps previews and the root app independent on the same origin", async ({ 
   // interfere with the initial navigation. A valid preview must still boot itself.
   await root.evaluate(async url => (await navigator.serviceWorker.getRegistration(url))?.unregister(), siblingURL.href);
   await ready(root, siblingURL.href);
-  await expect(comparison(root)).toHaveValue("Sibling PR comparison");
+  await expect(await readComparisonName(root)).toHaveValue("Sibling PR comparison");
   expect(await root.evaluate(() => caches.keys())).toEqual(expect.arrayContaining(after));
 
   await context.setOffline(true);
   await page.reload();
   await root.reload();
-  await expect(comparison(page)).toHaveValue("Primary PR comparison");
-  await expect(comparison(root)).toHaveValue("Sibling PR comparison");
-  for (const tab of [page, root]) await expect(tab.getByTestId("offline-status")).toHaveText("Working offline");
+  await expect(await readComparisonName(page)).toHaveValue("Primary PR comparison");
+  await expect(await readComparisonName(root)).toHaveValue("Sibling PR comparison");
+  for (const tab of [page, root]) {
+    await closeDialog(tab);
+    await expect(tab.getByTestId("offline-status")).toHaveText("Working offline");
+  }
 });

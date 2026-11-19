@@ -11,7 +11,7 @@ async function openEquipment(page: Page) {
 test('lying postures, explicit outlets, signed equipment limits and support shapes survive reload', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('curl-low');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('curl-low');
   for (const posture of ['supine', 'prone', 'side-lying']) {
     await selectSetupOption(page, 'A', 'A posture', posture);
     await expect.poll(async () => (await savedSetup(page))?.posture).toBe(posture);
@@ -41,7 +41,7 @@ test('lying postures, explicit outlets, signed equipment limits and support shap
 
 test('shrug uses centimetres and force, and a blocking body obstacle suppresses mechanics', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('shrug-dumbbell');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('shrug-dumbbell');
   const panel = page.getByRole('article', { name: 'Configuration A', exact: true });
   await expect(panel.locator('.moment')).toHaveText('+196.2 N');
   await expect(input(page, 'A · Shoulder-girdle elevation')).toBeVisible();

@@ -1,3 +1,4 @@
+import { revealControl, setComparisonName, readComparisonName, openTools } from './studio-helpers';
 import { field as studioField, fillField, openInspector, closeInspector, openSettingsGroup, setLock, selectSetupOption, setSetupCheck, clickSetupButton, openDialog, closeDialog, openDrawer, openTraining, openAnalysis, goWorkspace } from './studio-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
@@ -22,9 +23,7 @@ async function openDetails(page: Page, selector: string) {
   if (!(await details.evaluate(node => (node as HTMLDetailsElement).open))) await details.locator(':scope > summary').click();
 }
 async function workspace(page: Page, name: string) {
-  const button = page.getByRole('navigation', { name: 'Analysis workspaces' }).getByRole('button', { name, exact: true });
   await goWorkspace(page, name);
-  await expect(button).toHaveAttribute('aria-pressed', 'true');
 }
 async function download(page: Page, button: string) {
   const pending = page.waitForEvent('download');
@@ -38,20 +37,21 @@ async function noOverflow(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('navigation', { name: 'Analysis workspaces' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tools', exact: true })).toBeVisible();
 });
 
 test('exercise drafts retain setup, measured body and angle across switches and reload; reset restores the example', async ({ page }) => {
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('classic');
+  await revealControl(page.getByLabel('Movement mode', { exact: true }));
   await page.getByLabel('Synchronization mode', { exact: true }).selectOption('independent');
   await fillField(page, 'A · Pulley height', '245');
   await fillField(page, 'A · Upper-arm elevation from torso', '145');
   await openDetails(page, '#body-profile-a');
   await fillField(page, 'A · Upper arm', '38');
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('curl-low');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('curl-low');
   await fillField(page, 'A · Pulley height', '35');
   await fillField(page, 'A · Upper arm', '40');
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('classic');
   await expect(input(page, 'A · Pulley height')).toHaveValue('245');
   await expect(input(page, 'A · Upper arm')).toHaveValue('38');
   await expect(input(page, 'A · Upper-arm elevation from torso')).toHaveValue('145');
@@ -61,20 +61,20 @@ test('exercise drafts retain setup, measured body and angle across switches and 
   expect(drafts?.drafts.some(draft => draft.side === 0 && draft.preset === 'curl-low')).toBe(true);
 
   await page.reload();
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('curl-low');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('curl-low');
   await expect(input(page, 'A · Pulley height')).toHaveValue('35');
   await openDetails(page, '#body-profile-a');
   await expect(input(page, 'A · Upper arm')).toHaveValue('40');
   await closeInspector(page);
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('classic');
   await expect(input(page, 'A · Pulley height')).toHaveValue('245');
   await expect(input(page, 'A · Upper arm')).toHaveValue('38');
   await clickSetupButton(page, 'A', 'Reset setup preset');
   const original = presets.find(preset => preset.preset === 'classic')!;
   await expect(input(page, 'A · Pulley height')).toHaveValue(String(original.pulleyHeight * 100));
   await expect(input(page, 'A · Upper arm')).toHaveValue('38');
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('curl-low');
-  await page.getByLabel('Configuration A preset', { exact: true }).selectOption('classic');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('curl-low');
+  await page.getByLabel('Exercise A', { exact: true }).selectOption('classic');
   await expect(input(page, 'A · Pulley height')).toHaveValue(String(original.pulleyHeight * 100));
   await noOverflow(page);
 });
@@ -98,7 +98,9 @@ test('view, zoom and background pan survive reload and portable comparison impor
   await expect(page.getByRole('button', { name: 'Top view', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.toolbar-zoom')).toContainText('140%');
   expect((await mainState(page))!.viewFraming).toEqual(framing);
-  const exported = await download(page, 'Export');
+  await openTools(page);
+  const exported = await download(page, 'Export comparison');
+  await closeDialog(page);
   expect((JSON.parse(exported.text) as LabState).viewFraming).toEqual(framing);
   await page.getByRole('button', { name: 'Fit', exact: true }).click();
   await page.getByRole('button', { name: 'Side view', exact: true }).click();
@@ -114,7 +116,7 @@ test('global catalog routes a barbell row into the selected compound side', asyn
   await page.getByLabel('Search exercises', { exact: true }).fill('Barbell row');
   await page.getByLabel('Catalog target', { exact: true }).selectOption('1');
   await page.locator('#catalog .catalog-pick').filter({ hasText: 'Bent-over barbell row' }).click();
-  await expect(page.getByRole('navigation', { name: 'Analysis workspaces' }).getByRole('button', { name: 'Compound movements', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#compound-lab')).toBeVisible();
   await expect(page.getByLabel('B compound exercise', { exact: true })).toHaveValue('row-barbell');
   await expect(page.getByLabel('A compound exercise', { exact: true })).toHaveValue('row-seated');
   await expect.poll(async () => (await stored<CompoundSnapshot>(page, COMPOUND_KEY))?.configs[1].preset).toBe('row-barbell');
@@ -125,16 +127,18 @@ test('whole workspace export flushes current edits and restores every edited wor
   test.setTimeout(90000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.getByLabel('Comparison name', { exact: true }).fill('Portable shoulder comparison');
+  await setComparisonName(page, 'Portable shoulder comparison');
   await fillField(page, 'A · Pulley height', '215');
-  await workspace(page, 'Compound movements');
+  await workspace(page, 'Compound exercises');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison name', { exact: true }).fill('Portable row comparison');
+  await revealControl(page.getByLabel('Compound comparison name', { exact: true }));
   await page.getByLabel('Compound comparison notes', { exact: true }).fill('External moments only; fixed-trunk row assumption.');
   await openDetails(page, '.compound-library');
   await page.locator('.compound-library').getByRole('button', { name: 'Save named copy', exact: true }).click();
   await noOverflow(page);
 
-  await workspace(page, 'Find a setup & research');
+  await workspace(page, 'Explore setup changes');
   await openDetails(page, '#research-notebook');
   await page.getByLabel('Research note title', { exact: true }).fill('Portable pulley hypothesis');
   await page.getByLabel('Research question and hypothesis', { exact: true }).fill('Does changing pulley height shift the external moment peak?');
@@ -143,7 +147,7 @@ test('whole workspace export flushes current edits and restores every edited wor
   await expect(page.locator('.research-entry').getByRole('heading', { name: 'Portable pulley hypothesis', exact: true })).toBeVisible();
   await noOverflow(page);
 
-  await workspace(page, 'Machines & measured profiles');
+  await workspace(page, 'Machine resistance');
   const oldMachine = await stored<MachineWorkspace>(page, MACHINE_WORKSPACE_KEY);
   await page.getByLabel('Machine A name', { exact: true }).fill('Portable theoretical lever');
   await fillField(page, 'Machine A · Plate mass', '35');
@@ -176,24 +180,26 @@ test('whole workspace export flushes current edits and restores every edited wor
     localStorage.setItem(`${prefix}existing`, 'previous recovery retained');
     location.reload();
   }, { keys: WORKSPACE_STORAGE_KEYS, prefix: WORKSPACE_BACKUP_PREFIX });
-  await expect(page.getByLabel('Comparison name', { exact: true })).not.toHaveValue('Portable shoulder comparison');
+  await expect(await readComparisonName(page)).not.toHaveValue('Portable shoulder comparison');
+  await closeDialog(page);
   await openDetails(page, '#workspace-backup');
   await page.getByLabel('Import whole workspace file', { exact: true }).setInputFiles({ name: file.filename, mimeType: 'application/json', buffer: Buffer.from(file.text) });
   await expect(page.locator('.workspace-import-preview')).toContainText('Ready to restore these sections');
   await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: 'Restore & reload', exact: true }).click()]);
-  await expect(page.getByLabel('Comparison name', { exact: true })).toHaveValue('Portable shoulder comparison');
+  await expect(await readComparisonName(page)).toHaveValue('Portable shoulder comparison');
+  await closeDialog(page);
   await expect(input(page, 'A · Pulley height')).toHaveValue('215');
-  await workspace(page, 'Compound movements');
+  await workspace(page, 'Compound exercises');
   await expect(page.getByLabel('Compound comparison name', { exact: true })).toHaveValue('Portable row comparison');
   await expect(page.getByLabel('Compound comparison notes', { exact: true })).toHaveValue('External moments only; fixed-trunk row assumption.');
   await openDetails(page, '.compound-library');
   await expect(page.locator('.compound-library-row')).toContainText('Portable row comparison');
-  await workspace(page, 'Machines & measured profiles');
+  await workspace(page, 'Machine resistance');
   await expect(page.getByLabel('Machine A name', { exact: true })).toHaveValue('Portable theoretical lever');
   await expect(input(page, 'Machine A · Plate mass')).toHaveValue('35');
   await openDetails(page, '.machine-library');
   await expect(page.locator('.machine-saved-row')).toContainText('Portable theoretical lever');
-  await workspace(page, 'Find a setup & research');
+  await workspace(page, 'Explore setup changes');
   await openDetails(page, '#research-notebook');
   await expect(page.locator('.research-entry').getByRole('heading', { name: 'Portable pulley hypothesis', exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('unrelated-workspace-test'))).toBe('retained');
@@ -204,7 +210,7 @@ test('whole workspace export flushes current edits and restores every edited wor
 });
 
 test('invalid whole-workspace files report their error before changing current work', async ({ page }) => {
-  await page.getByLabel('Comparison name', { exact: true }).fill('Do not overwrite this comparison');
+  await setComparisonName(page, 'Do not overwrite this comparison');
   await expect.poll(async () => (await mainState(page))?.name).toBe('Do not overwrite this comparison');
   const before = await mainState(page);
   await openDetails(page, '#workspace-backup');

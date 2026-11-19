@@ -4,8 +4,8 @@ import { goWorkspace } from './studio-helpers';
 const KEY = 'biomechanics.machine-workspace.v1';
 async function openMachines(page: import('@playwright/test').Page) {
   await page.goto('/');
-  await goWorkspace(page, 'Machines & measured profiles');
-  await expect(page.getByRole('heading', { name: 'Machine profiles', exact: true })).toBeVisible();
+  await goWorkspace(page, 'Machine resistance');
+  await expect(page.getByRole('heading', { name: 'Machine resistance', exact: true })).toBeVisible();
 }
 
 test('machine A/B edits, undo, calibration domains, portable import and global flush', async ({ page }) => {
@@ -99,8 +99,8 @@ test('runtime formula applies explicit units and parameters, blocks unfinished e
   await a.getByLabel('Machine A mechanism',{exact:true}).selectOption('formula');
   await expect(a.locator('.machine-result')).toContainText('60.12 N·m');
   await a.getByLabel('Machine A formula expression',{exact:true}).fill('mass * gravity * radius * cos(q) + 5');
-  await goWorkspace(page,'Find a setup & research');await page.locator('.research-notebook').waitFor();
-  await goWorkspace(page,'Machines & measured profiles');
+  await goWorkspace(page,'Explore setup changes');await page.locator('.research-notebook').waitFor();
+  await goWorkspace(page,'Machine resistance');
   await expect(a.getByLabel('Machine A formula expression',{exact:true})).toHaveValue('mass * gravity * radius * cos(q) + 5');
   await page.getByRole('button',{name:'Export machine comparison',exact:true}).click();
   await expect(page.locator('.machine-notice').first()).toContainText('Apply or discard Machine A formula edits');
@@ -110,7 +110,7 @@ test('runtime formula applies explicit units and parameters, blocks unfinished e
   let text='';for await(const chunk of (await(await download).createReadStream())!)text+=chunk;
   expect(JSON.parse(text).formula.expression).toContain('+ 5');expect(JSON.parse(text).formula.parameters[2].unit).toBe('m');
   await expect.poll(()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)??'null')?.profiles[0].formula?.expression,KEY)).toContain('+ 5');
-  await page.reload();await goWorkspace(page,'Machines & measured profiles');await expect(a.locator('.machine-result')).toContainText('65.12 N·m');
+  await page.reload();await goWorkspace(page,'Machine resistance');await expect(a.locator('.machine-result')).toContainText('65.12 N·m');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
@@ -126,8 +126,8 @@ test('guided raw calibration keeps repeats, kgf conversion, unknown return branc
   await a.getByLabel('Machine A calibration instrument allowance',{exact:true}).fill('.1');
   const csv='angle,value,repeat\n20,1,one\n20,3,two\n60,3,one\n60,5,two';
   await a.getByLabel('Machine A lifting raw CSV',{exact:true}).fill(csv);
-  await goWorkspace(page,'Find a setup & research');await page.locator('.research-notebook').waitFor();
-  await goWorkspace(page,'Machines & measured profiles');
+  await goWorkspace(page,'Explore setup changes');await page.locator('.research-notebook').waitFor();
+  await goWorkspace(page,'Machine resistance');
   await expect(a.getByLabel('Machine A lifting raw CSV',{exact:true})).toHaveValue(csv);
   await expect(a.getByLabel('Machine A calibration protocol',{exact:true})).toHaveValue('Synthetic repeat rows at two angles to verify conversion and arithmetic; this is not empirical evidence.');
   await a.getByRole('button',{name:'Apply raw calibration A',exact:true}).click();

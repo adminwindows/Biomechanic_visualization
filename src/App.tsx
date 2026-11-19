@@ -1457,7 +1457,7 @@ export default function App() {
         <div className="tools-files">
           <label>Comparison name<input value={state.name} maxLength={100} onChange={event => update(draft => { draft.name = event.target.value; })}/></label>
           <span className="save-label">{!savingEnabled ? "Autosave paused" : saved ? "Saved on this browser" : "Saving…"}</span>
-          <button onClick={exportFile} aria-label="Export">Export joint comparison</button>
+          <button onClick={exportFile} aria-label="Export comparison">Export joint comparison</button>
           <button onClick={() => fileInput.current?.click()} aria-label="Import comparison">Import joint comparison</button>
         </div>
       </StudioDialog>
