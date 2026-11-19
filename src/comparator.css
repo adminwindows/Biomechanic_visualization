@@ -1,0 +1,372 @@
+/* The comparison fills the page. Secondary tools open from the header. */
+:root {
+  --ink: #202c2a;
+  --muted: #576563;
+  --page: #f8f7f2;
+  --paper: #fffefa;
+  --line: #d6dbd4;
+  --a: #006f73;
+  --b: #a84b22;
+  --teal: var(--a);
+  --orange: var(--b);
+  --focus: #076a70;
+}
+
+.comparator-shell {
+  min-height: 100dvh;
+  background: var(--page);
+  color: var(--ink);
+}
+
+main.studio-main.compare-main {
+  width: 100%;
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 0 clamp(14px, 3.5vw, 48px) 24px;
+}
+
+.comparator-shell .skip-link { left: 16px; }
+
+.compare-topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.compare-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 19px;
+  line-height: 1;
+  letter-spacing: -.05em;
+  font-weight: 650;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.compare-brand img { width: 32px; height: 32px; }
+.compare-brand:hover { background: transparent; }
+.compare-topbar svg, .tools-list svg { width: 18px; height: 18px; flex: none; }
+
+.compare-topbar button[aria-haspopup],
+.compare-topbar .tools-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  background: var(--paper);
+  border: 1px solid #aeb9b3;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.compare-topbar .offline-access { margin: 0; gap: 6px; }
+.compare-topbar .offline-details { flex-basis: auto; }
+.compare-topbar .offline-details > summary {
+  flex-wrap: nowrap;
+  min-height: 40px;
+  padding: 6px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.compare-topbar .offline-details > summary strong { font-weight: 500; }
+.compare-topbar .offline-summary-label { display: none; }
+.compare-topbar .offline-detail-body {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 0;
+  z-index: 25;
+  width: min(100%, 540px);
+  max-height: 72dvh;
+  overflow: auto;
+  padding: 18px;
+  background: var(--paper);
+  border: 1px solid #adbab1;
+  box-shadow: 0 8px 24px #20302c1c;
+}
+
+.compare-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 18px;
+  padding: clamp(22px, 3.2vw, 40px) 0 clamp(16px, 2vw, 24px);
+}
+
+.compare-header h1 {
+  margin: 0;
+  font-size: clamp(34px, 4.1vw, 54px);
+  line-height: 1.04;
+  letter-spacing: -.055em;
+  font-weight: 650;
+}
+
+.compare-header p {
+  max-width: 64ch;
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.compare-header button {
+  padding: 6px 0;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: var(--a);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 12px 0;
+}
+.pair-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 5px 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.pair-actions button svg { width: 15px; height: 15px; }
+.pair-actions button:hover { border-color: #a1b2aa; background: #f0f3ed; }
+
+.compare-main .comparison-grid:not(.settings-grid) { gap: clamp(10px, 1.5vw, 18px); }
+.compare-main .setup-card,
+.compare-main .curve-card,
+.compare-main .movement-panel,
+.compare-main .analysis-workbench {
+  min-width: 0;
+  border-color: var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: none;
+}
+
+.compare-main .setup-card .card-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  min-height: 49px;
+  border-bottom: 1px solid var(--line);
+}
+.compare-main .setup-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.28;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+.compare-main .card-heading .letter-badge {
+  width: 27px;
+  height: 27px;
+  border: none;
+  border-radius: 3px;
+  background: var(--series);
+  color: white;
+}
+
+.compare-main .edit-setup-button {
+  top: 58px;
+  min-height: 34px;
+  font-size: 12px;
+}
+.compare-main .card-heading .edit-setup-button {
+  position: static;
+  margin-left: auto;
+  border-color: var(--line);
+  background: transparent;
+  box-shadow: none;
+}
+.compare-main .scene-svg { background-color: #f6f7f1; }
+.compare-main .force-components, .compare-main .panel-footnote { font-size: 12px; }
+.compare-main .panel-footnote { line-height: 1.5; }
+
+.compare-main .analysis-grid { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }
+.compare-main .curve-card { padding: clamp(12px, 2vw, 22px); }
+.compare-main .curve-card .section-heading h2 {
+  font-size: clamp(20px, 2.2vw, 27px);
+  margin: 0;
+  letter-spacing: -.045em;
+}
+.compare-main .chart-caption,
+.compare-main .movement-caption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.compare-main .movement-panel { padding: clamp(12px, 1.8vw, 20px); }
+.compare-main .movement-title label, .compare-main .movement-title select { font-size: 12px; }
+.compare-main .play-button { width: 40px; height: 40px; }
+.compare-main .view-toolbar { margin: 8px 0 12px; }
+.compare-main .segmented { background: #e9ede6; }
+.compare-main .segmented button, .compare-main .toolbar-zoom button {
+  min-height: 32px;
+  font-size: 12px;
+}
+.compare-main .view-options { font-size: 12px; }
+.drawing-options, .movement-settings { margin: 8px 0; }
+.drawing-options > summary, .movement-settings > summary {
+  width: fit-content;
+  padding: 9px 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.drawing-options[open] > summary, .movement-settings[open] > summary { color: var(--ink); }
+.compare-main .analysis-workbench > summary { font-size: 14px; }
+
+.tools-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+.tools-list button, .tools-files button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px;
+  color: var(--ink);
+  text-align: left;
+  font-size: 14px;
+}
+.tools-list button { background: var(--page); border-color: var(--line); }
+.tools-list button:hover { border-color: var(--a); }
+.tools-files {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.tools-files input { max-width: 100%; min-width: 0; padding: 8px 10px; }
+.comparator-shell .studio-footer {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+}
+.comparator-shell .studio-footer button { font-size: inherit; }
+.comparator-shell .setup-inspector { top: 10px; bottom: 10px; }
+
+@media (max-width: 650px) {
+  .compare-topbar { min-height: 55px; gap: 8px; }
+  .compare-brand { gap: 5px; font-size: 16px; }
+  .compare-brand img { width: 25px; height: 25px; }
+  .compare-topbar .offline-details > summary { font-size: 10px; gap: 4px; }
+  .compare-topbar .offline-installed { display: none; }
+  .compare-header { padding: 19px 0 16px; }
+  .compare-header p { font-size: 13px; }
+  .pair-actions { gap: 5px; }
+  .pair-actions button { min-height: 38px; font-size: 12px; }
+  .compare-main .edit-setup-button { right: 8px; }
+  .compare-main .setup-name { font-size: 15px; }
+  .compare-main .cable-count { display: none; }
+  .tools-list { grid-template-columns: 1fr; }
+  .tools-files { align-items: flex-start; }
+  .comparator-shell .setup-inspector { bottom: 8px; }
+}
+
+@media (max-width: 380px) {
+  .compare-topbar { gap: 5px; }
+  .compare-topbar .offline-details > summary { max-width: 100px; }
+  .compare-topbar .offline-details > summary strong { white-space: normal; }
+  .compare-topbar .offline-details > summary::after { display: none; }
+}
+
+@media (orientation: landscape) and (min-width: 680px) {
+  .compare-main .comparison-grid:not(.settings-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media print {
+  .compare-topbar, .pair-actions { display: none; }
+  main.studio-main.compare-main { max-width: none; padding: 0; margin: 0; }
+}
+
+.compare-topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  min-width: 0;
+}
+.comparison-overview {
+  display: grid;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(12px, 1.5vw, 22px);
+  margin: 14px 0;
+}
+.comparison-overview > * { min-width: 0; }
+.compare-main .comparison-overview .analysis-grid,
+.compare-main .comparison-overview .comparison-results { margin: 0; }
+.comparison-overview .comparison-results { font-variant-numeric: tabular-nums; }
+.compare-main .comparison-overview .curve-card { padding: clamp(12px, 1.4vw, 18px); }
+.compare-main .comparison-overview .curve-card h2 { font-size: clamp(19px, 1.7vw, 23px); }
+.compare-jumps { display: none; }
+
+@media (min-width: 900px) {
+  .comparison-overview { grid-template-columns: minmax(300px, .83fr) minmax(430px, 1.17fr); }
+}
+@media (max-width: 899px) {
+  .compare-jumps {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .compare-jumps a {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    min-height: 38px;
+    color: var(--a);
+    font-size: 13px;
+    font-weight: 550;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+@media (max-width: 650px) {
+  .compare-topbar-actions { gap: 6px; }
+  .comparison-overview { margin: 12px 0; }
+}
+
+/* Axis labels stay readable when the plot shares a desktop row with the table. */
+.comparison-overview .curve-svg text[fill="#607383"],
+.comparison-overview .curve-svg text[fill="#425d70"] {
+  fill: #475956;
+  font-size: 12px;
+}
+.comparison-overview .curve-svg text[fill="#718492"] {
+  fill: #576861;
+  font-size: 10.5px;
+}

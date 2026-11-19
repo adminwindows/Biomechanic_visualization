@@ -1,0 +1,23 @@
+.research-notebook { border: 1px solid var(--line, #dbe3e1); border-radius: 12px; margin: 18px 0; background: var(--surface, #fff); }
+.research-notebook > summary { padding: 16px; cursor: pointer; font-weight: 600; }
+.research-notebook > summary span { font-weight: 400; font-size: 12px; color: var(--muted, #576864); margin-left: 8px; }
+.research-content { padding: 0 16px 16px; min-width: 0; font-size: 13px; line-height: 1.5; }
+.research-content h4 { margin: 0 0 10px; font-size: 15px; }
+.research-muted { color: var(--muted, #576864); font-size: 12px; }
+.research-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.research-actions button { font-size: 12px; }
+.research-notice, .research-recovery { padding: 10px 12px; background: #f0f5f2; border-radius: 6px; overflow-wrap: anywhere; }
+.research-form { display: grid; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line, #dbe3e1); }
+.research-form label { display: grid; gap: 5px; min-width: 0; font-size: 12px; }
+.research-form input, .research-form select, .research-form textarea { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--line, #dbe3e1); border-radius: 5px; padding: 8px; font: inherit; background: white; color: inherit; }
+.research-form textarea { resize: vertical; }
+.research-citations { display: grid; gap: 12px; min-width: 0; }
+.research-citations fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; border: 1px solid var(--line, #dbe3e1); border-radius: 6px; padding: 12px; }
+.research-citations > button { justify-self: start; }
+.research-entries { display: grid; gap: 12px; margin: 16px 0; }
+.research-entry { border: 1px solid var(--line, #dbe3e1); border-radius: 8px; padding: 14px; min-width: 0; overflow-wrap: anywhere; }
+.research-entry p { margin: 7px 0; }
+.research-category { color: #00645d; font-weight: 600; font-size: 12px; }
+.research-preserve { white-space: pre-wrap; }
+.research-entry ul { padding-left: 20px; }
+.research-entry a, .research-content a { color: #00645d; }

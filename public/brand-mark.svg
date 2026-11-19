@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Biomechanics Lab</title>
+  <desc id="desc">An original lowercase b with an articulated joint and a force arrow.</desc>
+  <path d="M17 10v43h15c11 0 19-7 19-17s-8-17-19-17H17" stroke="#172b3a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m18 44 15-15 14 9" stroke="#087f8c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m33 29 12-16m-9 1 9-1 1 9" stroke="#d66a45" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="33" cy="29" r="4" fill="#f3f5f7" stroke="#087f8c" stroke-width="3"/>
+</svg>

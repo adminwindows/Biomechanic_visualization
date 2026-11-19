@@ -1,0 +1,35 @@
+{
+  "id": "./",
+  "name": "Exercise Biomechanics Lab",
+  "short_name": "Biomechanics",
+  "description": "Compare exercise setup, body dimensions and external resistance with interactive biomechanics models.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f6f5f1",
+  "theme_color": "#007c78",
+  "lang": "en",
+  "categories": ["education", "health", "sports"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
